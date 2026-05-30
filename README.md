@@ -1,2 +1,2 @@
-# item-reminder
-日用品リマインダーPWA
+# test_item-reminder
+テスト用：日用品リマインダーPWA
