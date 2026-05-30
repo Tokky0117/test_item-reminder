@@ -499,6 +499,24 @@
       z-index: 40;
     }
 
+    .row.reorder-active {
+      z-index: 70;
+    }
+
+    .row.reorder-active .swipe-frame {
+      overflow: visible;
+    }
+
+    .row.reorder-active .item {
+      transform: scale(1.015);
+      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
+      border-color: rgba(0,122,255,0.15);
+    }
+
+    .app.reordering .row:not(.reorder-active) .item {
+      opacity: 0.82;
+    }
+
     .empty-list-message {
       text-align: center;
       color: #777;
@@ -577,7 +595,7 @@
       box-sizing: border-box;
       position: relative;
       z-index: 2;
-      transition: transform 0.18s ease;
+      transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, border-color 0.18s ease;
       will-change: transform;
     }
 
@@ -1269,6 +1287,7 @@
 
   <script>
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
+
     const REFRESH_OFFSET = 56;
     const PULL_TRIGGER_DISTANCE = 72;
     const PULL_MAX_DISTANCE = 96;
@@ -1276,6 +1295,10 @@
     const SWIPE_ACTION_WIDTH = 116;
     const SWIPE_OPEN_THRESHOLD = 32;
     const SWIPE_CLOSE_THRESHOLD = 24;
+
+    const REORDER_HOLD_MS = 520;
+    const REORDER_CANCEL_MOVE = 8;
+    const REORDER_STEP_DISTANCE = 44;
 
     const OWNER_TABS = [
       { key: "共", full: "共同", short: "共" },
@@ -1303,6 +1326,7 @@
     let helpBubbleTimer = null;
     let startupToastTimer = null;
     let itemModalCloseTimer = null;
+    let reorderHoldTimer = null;
 
     let shoppingMode = false;
 
@@ -1325,6 +1349,13 @@
     let swipeCanceled = false;
     let swipeFrameElement = null;
     let swipeItemElement = null;
+
+    let isReordering = false;
+    let reorderItemId = null;
+    let reorderCategory = null;
+    let reorderLastY = 0;
+    let reorderChanged = false;
+    let suppressNextTap = false;
 
     let modalIcon = "共";
     let modalCategory = "other";
@@ -1435,7 +1466,7 @@
     }
 
     function setOwnerTab(tabKey) {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
       activeOwnerTab = tabKey;
       closeSwipedItemWithoutRender();
       hideHelpBubble();
@@ -1480,7 +1511,7 @@
         button.className = `owner-tab ${stockClass} ${isActive ? "active" : ""}`;
         button.textContent = isActive ? tab.full : tab.short;
         button.setAttribute("aria-label", tab.full);
-        button.disabled = isModeSaving;
+        button.disabled = isModeSaving || isReordering;
         button.onclick = () => setOwnerTab(tab.key);
 
         tabContainer.appendChild(button);
@@ -1523,7 +1554,7 @@
     }
 
     function toggleCategoryCollapse(category) {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
 
       const key = category || "other";
 
@@ -1549,11 +1580,11 @@
       const hasChanges = hasModeChanges();
 
       if (cancelButton) {
-        cancelButton.disabled = isModeSaving;
+        cancelButton.disabled = isModeSaving || isReordering;
       }
 
       if (addButton) {
-        addButton.disabled = isModeSaving;
+        addButton.disabled = isModeSaving || isReordering;
       }
 
       if (purchaseCompleteButton) {
@@ -1875,17 +1906,18 @@
       const addButton = document.querySelector(".add-top-button");
 
       app.classList.toggle("shopping-mode", shoppingMode);
+      app.classList.toggle("reordering", isReordering);
 
       if (shoppingButton) {
-        shoppingButton.disabled = isModeSaving;
+        shoppingButton.disabled = isModeSaving || isReordering;
       }
 
       if (cancelButton) {
-        cancelButton.disabled = isModeSaving;
+        cancelButton.disabled = isModeSaving || isReordering;
       }
 
       if (addButton) {
-        addButton.disabled = isModeSaving;
+        addButton.disabled = isModeSaving || isReordering;
       }
 
       if (appTitle) {
@@ -1908,7 +1940,7 @@
           return;
         }
 
-        if (isRefreshing) return;
+        if (isRefreshing || isReordering) return;
 
         container.scrollTop = Math.max(previousScrollTop, 0);
       });
@@ -1968,6 +2000,7 @@
       container.addEventListener("touchstart", event => {
         if (shoppingMode) return;
         if (isModeSaving) return;
+        if (isReordering) return;
         if (isRefreshing) return;
         if (isBlockingModalOpen()) return;
         if (container.scrollTop > 0) return;
@@ -1981,7 +2014,7 @@
 
       container.addEventListener("touchmove", event => {
         if (!isPulling) return;
-        if (shoppingMode || isModeSaving || isRefreshing || isBlockingModalOpen()) {
+        if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen()) {
           resetPullRefreshVisual();
           return;
         }
@@ -2010,6 +2043,7 @@
           pullDistance >= PULL_TRIGGER_DISTANCE &&
           !shoppingMode &&
           !isModeSaving &&
+          !isReordering &&
           !isRefreshing &&
           !isBlockingModalOpen();
 
@@ -2053,6 +2087,10 @@
       }
 
       return sortItemsByCategory(displayItems);
+    }
+
+    function getVisibleReorderItemsForCategory(category) {
+      return getDisplayItems().filter(item => (item.category || "other") === (category || "other"));
     }
 
     function createCategoryHeading(category) {
@@ -2101,17 +2139,18 @@
     function createItemRow(item) {
       const index = items.findIndex(baseItem => baseItem.id === item.id);
       const isOpen = swipedItemId === item.id;
+      const isActiveReorder = isReordering && reorderItemId === item.id;
       const row = document.createElement("div");
 
-      row.className = `row ${isOpen ? "swipe-open" : ""}`;
+      row.className = `row ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""}`;
 
       row.innerHTML = `
         <div
           class="swipe-frame"
-          ontouchstart="startItemSwipe(event, '${item.id}')"
-          ontouchmove="moveItemSwipe(event)"
-          ontouchend="endItemSwipe(event, '${item.id}')"
-          ontouchcancel="cancelItemSwipe()"
+          ontouchstart="startItemTouch(event, '${item.id}')"
+          ontouchmove="moveItemTouch(event)"
+          ontouchend="endItemTouch(event, '${item.id}')"
+          ontouchcancel="cancelItemTouch()"
           onclick="handleItemTap(event, '${item.id}')"
         >
           <div class="swipe-actions">
@@ -2194,7 +2233,7 @@
         <button
           class="spare-badge ${className}"
           type="button"
-          ${isModeSaving ? "disabled" : ""}
+          ${isModeSaving || isReordering ? "disabled" : ""}
           onclick="event.stopPropagation(); toggleSpare(${index})"
           aria-label="${label}"
         >
@@ -2203,8 +2242,8 @@
       `;
     }
 
-    function startItemSwipe(event, id) {
-      if (shoppingMode || isModeSaving) return;
+    function startItemTouch(event, id) {
+      if (shoppingMode || isModeSaving || isReordering) return;
       if (!event.touches || event.touches.length !== 1) return;
       if (event.target.closest(".spare-badge")) return;
       if (event.target.closest(".swipe-action-button")) return;
@@ -2223,10 +2262,19 @@
       swipeMoved = false;
       swipeCanceled = false;
 
+      clearTimeout(reorderHoldTimer);
+      reorderHoldTimer = setTimeout(() => {
+        beginReorder(id, swipeCurrentY);
+      }, REORDER_HOLD_MS);
+
       swipeItemElement.classList.add("swiping");
     }
 
-    function moveItemSwipe(event) {
+    function moveItemTouch(event) {
+      if (isReordering) {
+        return;
+      }
+
       if (!swipeItemId || swipeCanceled || !swipeItemElement) return;
       if (!event.touches || event.touches.length !== 1) return;
 
@@ -2235,6 +2283,10 @@
 
       const deltaX = swipeCurrentX - swipeStartX;
       const deltaY = swipeCurrentY - swipeStartY;
+
+      if (Math.abs(deltaX) > REORDER_CANCEL_MOVE || Math.abs(deltaY) > REORDER_CANCEL_MOVE) {
+        clearTimeout(reorderHoldTimer);
+      }
 
       if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
         swipeCanceled = true;
@@ -2254,9 +2306,15 @@
       swipeItemElement.style.transform = `translateX(${offset}px)`;
     }
 
-    function endItemSwipe(event, id) {
+    function endItemTouch(event, id) {
+      clearTimeout(reorderHoldTimer);
+
+      if (isReordering) {
+        return;
+      }
+
       if (!swipeItemId || swipeItemId !== id) {
-        cancelItemSwipe();
+        cancelItemTouch();
         return;
       }
 
@@ -2278,11 +2336,12 @@
         }
       }
 
-      cancelItemSwipe();
+      cancelItemTouch();
       render();
     }
 
-    function cancelItemSwipe() {
+    function cancelItemTouch() {
+      clearTimeout(reorderHoldTimer);
       resetSwipeVisual();
 
       swipeItemId = null;
@@ -2304,11 +2363,162 @@
       }
     }
 
+    function beginReorder(id, startY) {
+      if (shoppingMode || isModeSaving || isRefreshing) return;
+
+      const item = items.find(item => item.id === id);
+      if (!item) return;
+
+      closeSwipedItemWithoutRender();
+      resetSwipeVisual();
+
+      isReordering = true;
+      reorderItemId = id;
+      reorderCategory = item.category || "other";
+      reorderLastY = startY;
+      reorderChanged = false;
+      suppressNextTap = true;
+
+      document.addEventListener("touchmove", handleReorderMove, { passive: false });
+      document.addEventListener("touchend", finishReorder, { passive: true });
+      document.addEventListener("touchcancel", cancelReorder, { passive: true });
+
+      render();
+    }
+
+    function handleReorderMove(event) {
+      if (!isReordering || !event.touches || event.touches.length !== 1) return;
+
+      event.preventDefault();
+
+      const currentY = event.touches[0].clientY;
+      const deltaY = currentY - reorderLastY;
+
+      if (Math.abs(deltaY) < REORDER_STEP_DISTANCE) return;
+
+      const direction = deltaY > 0 ? "down" : "up";
+      const moved = moveReorderItemOneStep(direction);
+
+      if (moved) {
+        reorderChanged = true;
+        reorderLastY = currentY;
+        render();
+      } else {
+        reorderLastY = currentY;
+      }
+    }
+
+    function moveReorderItemOneStep(direction) {
+      if (!reorderItemId || !reorderCategory) return false;
+
+      const visibleItems = getVisibleReorderItemsForCategory(reorderCategory);
+      const currentIndex = visibleItems.findIndex(item => item.id === reorderItemId);
+
+      if (currentIndex < 0) return false;
+
+      const targetIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= visibleItems.length) return false;
+
+      const movingItem = visibleItems[currentIndex];
+      const targetItem = visibleItems[targetIndex];
+
+      if (!movingItem || !targetItem) return false;
+      if ((movingItem.category || "other") !== (targetItem.category || "other")) return false;
+
+      if (direction === "up") {
+        moveItemBefore(movingItem.id, targetItem.id);
+      } else {
+        moveItemAfter(movingItem.id, targetItem.id);
+      }
+
+      return true;
+    }
+
+    function moveItemBefore(movingId, targetId) {
+      if (movingId === targetId) return;
+
+      const movingIndex = items.findIndex(item => item.id === movingId);
+      if (movingIndex < 0) return;
+
+      const [movingItem] = items.splice(movingIndex, 1);
+      const targetIndex = items.findIndex(item => item.id === targetId);
+
+      if (targetIndex < 0) {
+        items.push(movingItem);
+        return;
+      }
+
+      items.splice(targetIndex, 0, movingItem);
+    }
+
+    function moveItemAfter(movingId, targetId) {
+      if (movingId === targetId) return;
+
+      const movingIndex = items.findIndex(item => item.id === movingId);
+      if (movingIndex < 0) return;
+
+      const [movingItem] = items.splice(movingIndex, 1);
+      const targetIndex = items.findIndex(item => item.id === targetId);
+
+      if (targetIndex < 0) {
+        items.push(movingItem);
+        return;
+      }
+
+      items.splice(targetIndex + 1, 0, movingItem);
+    }
+
+    function finishReorder() {
+      if (!isReordering) return;
+
+      cleanupReorder();
+
+      if (reorderChanged) {
+        saveImmediateChange();
+      }
+
+      render();
+
+      setTimeout(() => {
+        suppressNextTap = false;
+      }, 300);
+    }
+
+    function cancelReorder() {
+      if (!isReordering) return;
+
+      cleanupReorder();
+      render();
+
+      setTimeout(() => {
+        suppressNextTap = false;
+      }, 300);
+    }
+
+    function cleanupReorder() {
+      document.removeEventListener("touchmove", handleReorderMove);
+      document.removeEventListener("touchend", finishReorder);
+      document.removeEventListener("touchcancel", cancelReorder);
+
+      isReordering = false;
+      reorderItemId = null;
+      reorderCategory = null;
+      reorderLastY = 0;
+      reorderChanged = false;
+
+      cancelItemTouch();
+    }
+
     function clamp(value, min, max) {
       return Math.min(Math.max(value, min), max);
     }
 
     function handleItemTap(event, id) {
+      if (suppressNextTap) {
+        event.stopPropagation();
+        return;
+      }
+
       if (swipeMoved) {
         event.stopPropagation();
         return;
@@ -2334,6 +2544,8 @@
 
     function editSwipedItem(event, id) {
       event.stopPropagation();
+      if (isReordering) return;
+
       closeSwipedItemWithoutRender();
       render();
       openEditModal(id);
@@ -2341,13 +2553,15 @@
 
     function deleteSwipedItem(event, id) {
       event.stopPropagation();
+      if (isReordering) return;
+
       closeSwipedItemWithoutRender();
       render();
       openDeleteConfirm(id);
     }
 
     function toggleSpare(index) {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
       if (index < 0 || !items[index]) return;
 
       closeSwipedItemWithoutRender();
@@ -2363,7 +2577,7 @@
     }
 
     function toggleShoppingMode() {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
       hideHelpBubble();
@@ -2382,7 +2596,7 @@
     }
 
     function openAddModal() {
-      if (shoppingMode || isModeSaving) return;
+      if (shoppingMode || isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
       hideHelpBubble();
@@ -2409,7 +2623,7 @@
     }
 
     function openEditModal(id) {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
       hideHelpBubble();
@@ -2614,7 +2828,7 @@
     }
 
     function openDeleteConfirm(id) {
-      if (isModeSaving) return;
+      if (isModeSaving || isReordering) return;
 
       const item = items.find(item => item.id === id);
       if (!item) return;
