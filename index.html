@@ -23,8 +23,6 @@
       --shopping-bg-color: #fff7e8;
       --shopping-header-color: #fff7e8;
       --shopping-accent-color: #a55a00;
-      --shopping-button-bg: transparent;
-      --shopping-button-border: transparent;
 
       --swipe-action-width: 116px;
     }
@@ -63,10 +61,6 @@
       background: var(--shopping-bg-color);
     }
 
-    .hidden {
-      display: none;
-    }
-
     .startup-screen {
       position: fixed;
       inset: 0;
@@ -95,10 +89,6 @@
       gap: 10px;
       text-align: center;
       box-sizing: border-box;
-    }
-
-    .startup-theme-default {
-      color: #111;
     }
 
     .startup-visual {
@@ -247,7 +237,6 @@
       color: var(--shopping-accent-color);
       border: none;
       box-shadow: none;
-      padding: 0 8px;
     }
 
     .shopping-button:active {
@@ -374,11 +363,11 @@
     .app.reordering #items {
       overflow-y: hidden;
     }
-    
+
     .app.reordering .swipe-frame {
       touch-action: none;
     }
-    
+
     #items .row,
     #items .category-heading,
     #items .empty-list-message {
@@ -1125,7 +1114,7 @@
 
 <body>
   <div class="startup-screen" id="startupScreen">
-    <div class="startup-card startup-theme-default" id="startupCard">
+    <div class="startup-card" id="startupCard">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
       <div class="startup-message" id="startupMessage"></div>
@@ -1169,11 +1158,9 @@
       <div class="item-page-header">
         <div class="item-page-title-row">
           <button class="item-page-cancel-button" onclick="closeItemModal()">キャンセル</button>
-
           <div class="item-page-title-center">
             <div class="item-page-title" id="itemModalTitle">日用品を追加</div>
           </div>
-
           <button class="item-page-save-button" id="modalConfirm" onclick="confirmItemModal()" disabled>決定</button>
         </div>
       </div>
@@ -1183,21 +1170,12 @@
           <div class="item-form-card">
             <div class="field">
               <label>日用品名</label>
-              <input
-                id="modalName"
-                type="text"
-                placeholder="入力してください"
-                oninput="validateItemModal()"
-              >
+              <input id="modalName" type="text" placeholder="入力してください" oninput="validateItemModal()">
             </div>
 
             <div class="field">
               <label>備考</label>
-              <input
-                id="modalNote"
-                type="text"
-                placeholder="任意"
-              >
+              <input id="modalNote" type="text" placeholder="任意">
             </div>
 
             <div class="field">
@@ -1285,9 +1263,7 @@
   <div class="modal-backdrop" id="loadFailureModal">
     <div class="modal">
       <h2>読み込み失敗</h2>
-      <div class="confirm-message" id="loadFailureMessage">
-        リストを読み込めませんでした。
-      </div>
+      <div class="confirm-message" id="loadFailureMessage">リストを読み込めませんでした。</div>
       <div class="modal-actions">
         <button class="confirm-button" onclick="closeLoadFailureModal()">OK</button>
       </div>
@@ -1308,6 +1284,7 @@
     const REORDER_HOLD_MS = 520;
     const REORDER_CANCEL_MOVE = 8;
     const REORDER_STEP_DISTANCE = 44;
+    const ORDER_STEP = 10;
 
     const OWNER_TABS = [
       { key: "共", full: "共同", short: "共" },
@@ -1338,7 +1315,6 @@
     let reorderHoldTimer = null;
 
     let shoppingMode = false;
-
     let shoppingModeItemIds = new Set();
     let activeOwnerTab = "all";
     let collapsedCategories = new Set();
@@ -1391,17 +1367,13 @@
     let isLoadFailureModalOpen = false;
 
     function setupStartupScreen() {
-      const card = document.getElementById("startupCard");
       const visual = document.getElementById("startupVisual");
       const title = document.getElementById("startupTitle");
       const message = document.getElementById("startupMessage");
 
-      if (!card || !visual || !title || !message) return;
-
-      card.className = "startup-card startup-theme-default";
-      visual.textContent = "🧺";
-      title.textContent = "日用品リスト";
-      message.textContent = "";
+      if (visual) visual.textContent = "🧺";
+      if (title) title.textContent = "日用品リスト";
+      if (message) message.textContent = "";
     }
 
     function startStartupToastTimer() {
@@ -1410,7 +1382,6 @@
       if (!screen || !startupToast) return;
 
       clearTimeout(startupToastTimer);
-
       startupToastTimer = setTimeout(() => {
         if (isInitialLoading) {
           startupToast.textContent = "起動中…";
@@ -1542,6 +1513,59 @@
       return owner ? owner.name : "共同";
     }
 
+    function normalizeItems(data) {
+      const normalized = data.map((item, index) => {
+        const category = item.category || "other";
+        const orderNumber = Number(item.categoryOrder);
+
+        return {
+          id: item.id || createId(),
+          name: item.name || "",
+          hasSpare: item.hasSpare === true || item.hasSpare === "TRUE",
+          note: item.note || "",
+          icon: item.icon || "共",
+          category: category,
+          categoryOrder: Number.isFinite(orderNumber) ? orderNumber : null,
+          _loadedIndex: index
+        };
+      });
+
+      fillMissingCategoryOrders(normalized);
+
+      return normalized.map(item => {
+        const { _loadedIndex, ...cleanItem } = item;
+        return cleanItem;
+      });
+    }
+
+    function fillMissingCategoryOrders(targetItems) {
+      CATEGORY_LABELS.forEach(category => {
+        const categoryItems = targetItems.filter(item => (item.category || "other") === category.key);
+
+        categoryItems.sort((a, b) => {
+          const aOrder = Number(a.categoryOrder);
+          const bOrder = Number(b.categoryOrder);
+          const aHasOrder = Number.isFinite(aOrder);
+          const bHasOrder = Number.isFinite(bOrder);
+
+          if (aHasOrder && bHasOrder && aOrder !== bOrder) {
+            return aOrder - bOrder;
+          }
+
+          return (a._loadedIndex || 0) - (b._loadedIndex || 0);
+        });
+
+        categoryItems.forEach((item, index) => {
+          item.categoryOrder = (index + 1) * ORDER_STEP;
+        });
+      });
+    }
+
+    function getOrderValue(item) {
+      const value = Number(item.categoryOrder);
+      return Number.isFinite(value) ? value : 999999;
+    }
+
     function sortItemsByCategory(sourceItems) {
       return sourceItems
         .map(item => ({
@@ -1557,9 +1581,40 @@
             return categoryDiff;
           }
 
+          const orderDiff = getOrderValue(a.item) - getOrderValue(b.item);
+
+          if (orderDiff !== 0) {
+            return orderDiff;
+          }
+
           return a.originalIndex - b.originalIndex;
         })
         .map(entry => entry.item);
+    }
+
+    function normalizeCategoryOrderFor(category) {
+      const categoryItems = items
+        .filter(item => (item.category || "other") === (category || "other"))
+        .sort((a, b) => {
+          const orderDiff = getOrderValue(a) - getOrderValue(b);
+          if (orderDiff !== 0) return orderDiff;
+          return items.findIndex(item => item.id === a.id) - items.findIndex(item => item.id === b.id);
+        });
+
+      categoryItems.forEach((item, index) => {
+        item.categoryOrder = (index + 1) * ORDER_STEP;
+      });
+    }
+
+    function getNextCategoryOrder(category) {
+      const categoryItems = items.filter(item => (item.category || "other") === (category || "other"));
+
+      if (categoryItems.length === 0) {
+        return ORDER_STEP;
+      }
+
+      const maxOrder = Math.max(...categoryItems.map(item => getOrderValue(item)));
+      return Number.isFinite(maxOrder) ? maxOrder + ORDER_STEP : (categoryItems.length + 1) * ORDER_STEP;
     }
 
     function toggleCategoryCollapse(category) {
@@ -1622,17 +1677,6 @@
       if (icon === "か") return "かずまさ";
       if (icon === "み") return "みゆう";
       return "共同";
-    }
-
-    function normalizeItems(data) {
-      return data.map(item => ({
-        id: item.id || createId(),
-        name: item.name || "",
-        hasSpare: item.hasSpare === true || item.hasSpare === "TRUE",
-        note: item.note || "",
-        icon: item.icon || "共",
-        category: item.category || "other"
-      }));
     }
 
     function resetModesAndSelections() {
@@ -2007,11 +2051,7 @@
       const container = document.getElementById("items");
 
       container.addEventListener("touchstart", event => {
-        if (shoppingMode) return;
-        if (isModeSaving) return;
-        if (isReordering) return;
-        if (isRefreshing) return;
-        if (isBlockingModalOpen()) return;
+        if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen()) return;
         if (container.scrollTop > 0) return;
         if (!event.touches || event.touches.length !== 1) return;
 
@@ -2286,42 +2326,43 @@
         handleReorderMove(event);
         return;
       }
-    
+
       if (!swipeItemId || swipeCanceled || !swipeItemElement) return;
       if (!event.touches || event.touches.length !== 1) return;
-    
+
       swipeCurrentX = event.touches[0].clientX;
       swipeCurrentY = event.touches[0].clientY;
-    
+
       const deltaX = swipeCurrentX - swipeStartX;
       const deltaY = swipeCurrentY - swipeStartY;
-    
+
       if (Math.abs(deltaX) > REORDER_CANCEL_MOVE || Math.abs(deltaY) > REORDER_CANCEL_MOVE) {
         clearTimeout(reorderHoldTimer);
       }
-    
+
       if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
         swipeCanceled = true;
         resetSwipeVisual();
         return;
       }
-    
+
       if (Math.abs(deltaX) > 8) {
         swipeMoved = true;
       }
-    
+
       if (Math.abs(deltaX) > 8) {
         event.preventDefault();
       }
-    
+
       const offset = clamp(swipeBaseOffset + deltaX, -SWIPE_ACTION_WIDTH, 0);
       swipeItemElement.style.transform = `translateX(${offset}px)`;
     }
-    
+
     function endItemTouch(event, id) {
       clearTimeout(reorderHoldTimer);
 
       if (isReordering) {
+        finishReorder();
         return;
       }
 
@@ -2440,58 +2481,79 @@
       if ((movingItem.category || "other") !== (targetItem.category || "other")) return false;
 
       if (direction === "up") {
-        moveItemBefore(movingItem.id, targetItem.id);
+        moveItemBeforeInCategory(movingItem.id, targetItem.id, reorderCategory);
       } else {
-        moveItemAfter(movingItem.id, targetItem.id);
+        moveItemAfterInCategory(movingItem.id, targetItem.id, reorderCategory);
       }
 
       return true;
     }
 
-    function moveItemBefore(movingId, targetId) {
-      if (movingId === targetId) return;
-
-      const movingIndex = items.findIndex(item => item.id === movingId);
+    function moveItemBeforeInCategory(movingId, targetId, category) {
+      const categoryItems = getCategoryItemsInOrder(category);
+      const movingIndex = categoryItems.findIndex(item => item.id === movingId);
       if (movingIndex < 0) return;
 
-      const [movingItem] = items.splice(movingIndex, 1);
-      const targetIndex = items.findIndex(item => item.id === targetId);
+      const [movingItem] = categoryItems.splice(movingIndex, 1);
+      const targetIndex = categoryItems.findIndex(item => item.id === targetId);
 
       if (targetIndex < 0) {
-        items.push(movingItem);
-        return;
+        categoryItems.push(movingItem);
+      } else {
+        categoryItems.splice(targetIndex, 0, movingItem);
       }
 
-      items.splice(targetIndex, 0, movingItem);
+      applyCategoryOrder(category, categoryItems);
     }
 
-    function moveItemAfter(movingId, targetId) {
-      if (movingId === targetId) return;
-
-      const movingIndex = items.findIndex(item => item.id === movingId);
+    function moveItemAfterInCategory(movingId, targetId, category) {
+      const categoryItems = getCategoryItemsInOrder(category);
+      const movingIndex = categoryItems.findIndex(item => item.id === movingId);
       if (movingIndex < 0) return;
 
-      const [movingItem] = items.splice(movingIndex, 1);
-      const targetIndex = items.findIndex(item => item.id === targetId);
+      const [movingItem] = categoryItems.splice(movingIndex, 1);
+      const targetIndex = categoryItems.findIndex(item => item.id === targetId);
 
       if (targetIndex < 0) {
-        items.push(movingItem);
-        return;
+        categoryItems.push(movingItem);
+      } else {
+        categoryItems.splice(targetIndex + 1, 0, movingItem);
       }
 
-      items.splice(targetIndex + 1, 0, movingItem);
+      applyCategoryOrder(category, categoryItems);
+    }
+
+    function getCategoryItemsInOrder(category) {
+      return items
+        .filter(item => (item.category || "other") === (category || "other"))
+        .sort((a, b) => {
+          const orderDiff = getOrderValue(a) - getOrderValue(b);
+          if (orderDiff !== 0) return orderDiff;
+          return items.findIndex(item => item.id === a.id) - items.findIndex(item => item.id === b.id);
+        });
+    }
+
+    function applyCategoryOrder(category, orderedCategoryItems) {
+      orderedCategoryItems.forEach((item, index) => {
+        const baseItem = items.find(base => base.id === item.id);
+        if (baseItem) {
+          baseItem.categoryOrder = (index + 1) * ORDER_STEP;
+        }
+      });
     }
 
     function finishReorder() {
       if (!isReordering) return;
 
+      const shouldSave = reorderChanged;
+
       cleanupReorder();
 
-      if (reorderChanged) {
+      render();
+
+      if (shouldSave) {
         saveImmediateChange();
       }
-
-      render();
 
       setTimeout(() => {
         suppressNextTap = false;
@@ -2699,10 +2761,7 @@
     }
 
     function toggleCategoryPicker(event) {
-      if (event) {
-        event.stopPropagation();
-      }
-
+      if (event) event.stopPropagation();
       if (isModeSaving) return;
 
       isOwnerPickerOpen = false;
@@ -2712,10 +2771,7 @@
     }
 
     function toggleOwnerPicker(event) {
-      if (event) {
-        event.stopPropagation();
-      }
-
+      if (event) event.stopPropagation();
       if (isModeSaving) return;
 
       isCategoryPickerOpen = false;
@@ -2815,30 +2871,40 @@
     }
 
     function addItemFromModal(name, note) {
+      const category = modalCategory || "other";
+
       items.push({
         id: createId(),
         name: name,
         hasSpare: false,
         note: note,
         icon: modalIcon,
-        category: modalCategory || "other"
+        category: category,
+        categoryOrder: getNextCategoryOrder(category)
       });
     }
 
     function updateItemFromModal(name, note) {
       items = items.map(item => {
         if (item.id === editingItemId) {
+          const oldCategory = item.category || "other";
+          const newCategory = modalCategory || "other";
+          const categoryChanged = oldCategory !== newCategory;
+
           return {
             ...item,
             name: name,
             note: note,
             icon: modalIcon,
-            category: modalCategory || "other"
+            category: newCategory,
+            categoryOrder: categoryChanged ? getNextCategoryOrder(newCategory) : item.categoryOrder
           };
         }
 
         return item;
       });
+
+      normalizeCategoryOrderFor(modalCategory || "other");
     }
 
     function openDeleteConfirm(id) {
@@ -2864,8 +2930,12 @@
     function confirmDeleteItem() {
       if (isModeSaving || !deletingItemId) return;
 
+      const deletedItem = items.find(item => item.id === deletingItemId);
+      const deletedCategory = deletedItem ? deletedItem.category || "other" : "other";
+
       items = items.filter(item => item.id !== deletingItemId);
       deletingItemId = null;
+      normalizeCategoryOrderFor(deletedCategory);
 
       document.getElementById("deleteConfirmModal").classList.remove("show");
       saveImmediateChange();
@@ -2926,9 +2996,7 @@
     }
 
     function toggleShoppingHelpFromTitle(event) {
-      if (event) {
-        event.stopPropagation();
-      }
+      if (event) event.stopPropagation();
 
       if (!shoppingMode || isModeSaving) return;
 
