@@ -361,11 +361,15 @@
     }
 
     .app.reordering #items {
-      overflow-y: hidden;
+      overflow-y: auto;
     }
 
     .app.reordering .swipe-frame {
       touch-action: none;
+    }
+
+    .app.reordering .swipe-actions {
+      display: none;
     }
 
     #items .row,
@@ -505,7 +509,7 @@
     }
 
     .row.reorder-active .item {
-      transform: scale(1.035);
+      transform: translateY(var(--reorder-offset-y, 0px)) scale(1.035);
       box-shadow: 0 10px 24px rgba(0,0,0,0.22);
       border-color: rgba(0,122,255,0.28);
       background: #ffffff;
@@ -1284,6 +1288,8 @@
     const REORDER_HOLD_MS = 520;
     const REORDER_CANCEL_MOVE = 8;
     const REORDER_STEP_DISTANCE = 44;
+    const REORDER_AUTO_SCROLL_ZONE = 64;
+    const REORDER_AUTO_SCROLL_MAX_SPEED = 9;
     const ORDER_STEP = 10;
 
     const OWNER_TABS = [
@@ -1339,8 +1345,13 @@
     let reorderItemId = null;
     let reorderCategory = null;
     let reorderLastY = 0;
+    let reorderTouchY = 0;
+    let reorderDragOffset = 0;
     let reorderChanged = false;
     let suppressNextTap = false;
+    let reorderAutoScrollSpeed = 0;
+    let reorderAutoScrollFrame = null;
+    let reorderScrollRemainder = 0;
 
     let modalIcon = "共";
     let modalCategory = "other";
@@ -2193,6 +2204,10 @@
 
       row.className = `row ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""}`;
 
+      if (isActiveReorder) {
+        row.style.setProperty("--reorder-offset-y", reorderDragOffset + "px");
+      }
+
       row.innerHTML = `
         <div
           class="swipe-frame"
@@ -2431,8 +2446,12 @@
       reorderItemId = id;
       reorderCategory = item.category || "other";
       reorderLastY = startY;
+      reorderTouchY = startY;
+      reorderDragOffset = 0;
       reorderChanged = false;
       suppressNextTap = true;
+      reorderAutoScrollSpeed = 0;
+      reorderScrollRemainder = 0;
 
       document.addEventListener("touchmove", handleReorderMove, { passive: false });
       document.addEventListener("touchend", finishReorder, { passive: true });
@@ -2444,15 +2463,26 @@
     function handleReorderMove(event) {
       if (!isReordering || !event.touches || event.touches.length !== 1) return;
 
+      if (event._reorderHandled) return;
+      event._reorderHandled = true;
+
       event.preventDefault();
 
       const currentY = event.touches[0].clientY;
+      reorderTouchY = currentY;
+
+      updateReorderAutoScroll(currentY);
+
       const deltaY = currentY - reorderLastY;
+      reorderDragOffset = clamp(deltaY, -REORDER_STEP_DISTANCE, REORDER_STEP_DISTANCE);
+      updateReorderVisualOffset();
 
       if (Math.abs(deltaY) < REORDER_STEP_DISTANCE) return;
 
       const direction = deltaY > 0 ? "down" : "up";
       const moved = moveReorderItemOneStep(direction);
+
+      reorderDragOffset = 0;
 
       if (moved) {
         reorderChanged = true;
@@ -2460,6 +2490,92 @@
         render();
       } else {
         reorderLastY = currentY;
+        updateReorderVisualOffset();
+      }
+    }
+
+    function updateReorderVisualOffset() {
+      const activeRow = document.querySelector(".row.reorder-active");
+      if (!activeRow) return;
+
+      activeRow.style.setProperty("--reorder-offset-y", reorderDragOffset + "px");
+    }
+
+    function updateReorderAutoScroll(currentY) {
+      const container = document.getElementById("items");
+      if (!container) return;
+
+      const rect = container.getBoundingClientRect();
+      const topDistance = currentY - rect.top;
+      const bottomDistance = rect.bottom - currentY;
+
+      let speed = 0;
+
+      if (topDistance < REORDER_AUTO_SCROLL_ZONE) {
+        const ratio = (REORDER_AUTO_SCROLL_ZONE - topDistance) / REORDER_AUTO_SCROLL_ZONE;
+        speed = -Math.ceil(ratio * REORDER_AUTO_SCROLL_MAX_SPEED);
+      } else if (bottomDistance < REORDER_AUTO_SCROLL_ZONE) {
+        const ratio = (REORDER_AUTO_SCROLL_ZONE - bottomDistance) / REORDER_AUTO_SCROLL_ZONE;
+        speed = Math.ceil(ratio * REORDER_AUTO_SCROLL_MAX_SPEED);
+      }
+
+      reorderAutoScrollSpeed = speed;
+
+      if (speed !== 0) {
+        startReorderAutoScroll();
+      } else {
+        stopReorderAutoScroll();
+      }
+    }
+
+    function startReorderAutoScroll() {
+      if (reorderAutoScrollFrame) return;
+
+      const step = () => {
+        reorderAutoScrollFrame = null;
+
+        if (!isReordering || reorderAutoScrollSpeed === 0) return;
+
+        const container = document.getElementById("items");
+        if (!container) return;
+
+        const before = container.scrollTop;
+        container.scrollTop = before + reorderAutoScrollSpeed;
+        const actualMove = container.scrollTop - before;
+
+        if (actualMove !== 0) {
+          reorderScrollRemainder += actualMove;
+
+          if (Math.abs(reorderScrollRemainder) >= REORDER_STEP_DISTANCE) {
+            const direction = reorderScrollRemainder > 0 ? "down" : "up";
+            const moved = moveReorderItemOneStep(direction);
+
+            reorderScrollRemainder = 0;
+            reorderDragOffset = 0;
+
+            if (moved) {
+              reorderChanged = true;
+              reorderLastY = reorderTouchY;
+              render();
+            }
+          }
+        }
+
+        if (isReordering && reorderAutoScrollSpeed !== 0) {
+          reorderAutoScrollFrame = requestAnimationFrame(step);
+        }
+      };
+
+      reorderAutoScrollFrame = requestAnimationFrame(step);
+    }
+
+    function stopReorderAutoScroll() {
+      reorderAutoScrollSpeed = 0;
+      reorderScrollRemainder = 0;
+
+      if (reorderAutoScrollFrame) {
+        cancelAnimationFrame(reorderAutoScrollFrame);
+        reorderAutoScrollFrame = null;
       }
     }
 
@@ -2576,11 +2692,16 @@
       document.removeEventListener("touchend", finishReorder);
       document.removeEventListener("touchcancel", cancelReorder);
 
+      stopReorderAutoScroll();
+
       isReordering = false;
       reorderItemId = null;
       reorderCategory = null;
       reorderLastY = 0;
+      reorderTouchY = 0;
+      reorderDragOffset = 0;
       reorderChanged = false;
+      reorderScrollRemainder = 0;
 
       cancelItemTouch();
     }
