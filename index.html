@@ -371,6 +371,14 @@
       background: var(--shopping-bg-color);
     }
 
+    .app.reordering #items {
+      overflow-y: hidden;
+    }
+    
+    .app.reordering .swipe-frame {
+      touch-action: none;
+    }
+    
     #items .row,
     #items .category-heading,
     #items .empty-list-message {
@@ -508,9 +516,10 @@
     }
 
     .row.reorder-active .item {
-      transform: scale(1.015);
-      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
-      border-color: rgba(0,122,255,0.15);
+      transform: scale(1.035);
+      box-shadow: 0 10px 24px rgba(0,0,0,0.22);
+      border-color: rgba(0,122,255,0.28);
+      background: #ffffff;
     }
 
     .app.reordering .row:not(.reorder-active) .item {
@@ -2272,40 +2281,43 @@
 
     function moveItemTouch(event) {
       if (isReordering) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleReorderMove(event);
         return;
       }
-
+    
       if (!swipeItemId || swipeCanceled || !swipeItemElement) return;
       if (!event.touches || event.touches.length !== 1) return;
-
+    
       swipeCurrentX = event.touches[0].clientX;
       swipeCurrentY = event.touches[0].clientY;
-
+    
       const deltaX = swipeCurrentX - swipeStartX;
       const deltaY = swipeCurrentY - swipeStartY;
-
+    
       if (Math.abs(deltaX) > REORDER_CANCEL_MOVE || Math.abs(deltaY) > REORDER_CANCEL_MOVE) {
         clearTimeout(reorderHoldTimer);
       }
-
+    
       if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
         swipeCanceled = true;
         resetSwipeVisual();
         return;
       }
-
+    
       if (Math.abs(deltaX) > 8) {
         swipeMoved = true;
       }
-
+    
       if (Math.abs(deltaX) > 8) {
         event.preventDefault();
       }
-
+    
       const offset = clamp(swipeBaseOffset + deltaX, -SWIPE_ACTION_WIDTH, 0);
       swipeItemElement.style.transform = `translateX(${offset}px)`;
     }
-
+    
     function endItemTouch(event, id) {
       clearTimeout(reorderHoldTimer);
 
@@ -2371,6 +2383,8 @@
 
       closeSwipedItemWithoutRender();
       resetSwipeVisual();
+      resetPullRefreshVisual();
+      hideHelpBubble();
 
       isReordering = true;
       reorderItemId = id;
