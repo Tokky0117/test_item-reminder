@@ -29,10 +29,12 @@
 
     * {
       -webkit-tap-highlight-color: transparent;
+      box-sizing: border-box;
     }
 
     button {
       -webkit-tap-highlight-color: transparent;
+      font: inherit;
     }
 
     button:focus {
@@ -88,7 +90,6 @@
       justify-content: center;
       gap: 10px;
       text-align: center;
-      box-sizing: border-box;
     }
 
     .startup-visual {
@@ -134,7 +135,6 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.24s ease, transform 0.24s ease;
-      box-sizing: border-box;
       text-align: center;
       white-space: nowrap;
     }
@@ -151,7 +151,6 @@
       padding: 10px 12px 7px;
       position: relative;
       transition: background 0.18s ease;
-      box-sizing: border-box;
     }
 
     .app.shopping-mode .header {
@@ -186,18 +185,6 @@
       max-width: calc(100vw - 160px);
     }
 
-    .title-with-help {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-width: 0;
-      border-radius: 10px;
-    }
-
-    .app.shopping-mode .title-with-help {
-      padding: 0 4px;
-    }
-
     h1,
     .item-page-title {
       text-align: center;
@@ -228,36 +215,36 @@
       transform: translateY(-50%);
       transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease, transform 0.08s ease;
       font-size: 14px;
+      background: transparent;
     }
 
     .shopping-button {
       left: 0;
-      background: transparent;
       color: var(--shopping-accent-color);
       border: none;
       box-shadow: none;
     }
 
-    .shopping-button:active {
+    .shopping-button:active,
+    .shopping-cancel-top-button:active,
+    .add-top-button:active,
+    .item-page-cancel-button:active {
       transform: translateY(-50%) scale(0.96);
     }
 
     .shopping-cancel-top-button {
       display: none;
       left: 0;
-      background: transparent;
       color: var(--primary-color);
     }
 
     .add-top-button {
       right: 0;
-      background: transparent;
       color: var(--primary-color);
     }
 
     .item-page-cancel-button {
       left: 0;
-      background: transparent;
       color: var(--primary-color);
     }
 
@@ -347,7 +334,6 @@
       flex-direction: column;
       gap: 9px;
       padding: 0 10px 10px;
-      box-sizing: border-box;
       -webkit-overflow-scrolling: touch;
       position: relative;
       overscroll-behavior-y: contain;
@@ -405,7 +391,7 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 5px;
+      gap: 6px;
       max-width: 100%;
       line-height: 1.2;
     }
@@ -415,16 +401,25 @@
     }
 
     .category-arrow {
-      color: #777;
-      font-size: 12px;
-      line-height: 1;
       width: 12px;
-      height: 12px;
+      height: 14px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transform: translateY(-0.5px);
+      color: #8b96ab;
+      transform: translateY(0);
+    }
+
+    .category-arrow svg {
+      width: 12px;
+      height: 14px;
+      display: block;
+      stroke: currentColor;
+      stroke-width: 1.9;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      fill: none;
     }
 
     .pull-refresh {
@@ -466,7 +461,6 @@
       border: 4px solid #d0d0d0;
       border-right-color: var(--primary-color);
       border-radius: 50%;
-      box-sizing: border-box;
       display: inline-block;
       transform-origin: 50% 50%;
       transition: transform 0.16s ease;
@@ -558,7 +552,6 @@
       justify-content: flex-end;
       gap: 6px;
       padding: 4px 3px;
-      box-sizing: border-box;
       border-radius: 8px;
       overflow: hidden;
       z-index: 1;
@@ -585,7 +578,6 @@
       justify-content: center;
       gap: 3px;
       padding: 0;
-      box-sizing: border-box;
       border-radius: 13px;
       box-shadow: 0 2px 7px rgba(0,0,0,0.12);
     }
@@ -623,7 +615,6 @@
       -webkit-touch-callout: none;
       box-shadow: 0 2px 8px rgba(0,0,0,0.10);
       border: 1px solid rgba(0,0,0,0.03);
-      box-sizing: border-box;
       position: relative;
       z-index: 2;
       transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease, border-color 0.18s ease;
@@ -692,7 +683,6 @@
       justify-content: center;
       flex-shrink: 0;
       padding: 0 7px;
-      box-sizing: border-box;
     }
 
     .spare-badge {
@@ -706,6 +696,7 @@
       white-space: nowrap;
       transition: background 0.16s ease, color 0.16s ease, opacity 0.16s ease, transform 0.08s ease, box-shadow 0.16s ease;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      border: none;
     }
 
     .spare-badge:active {
@@ -739,7 +730,6 @@
       padding: 8px 14px calc(14px + env(safe-area-inset-bottom));
       background: rgba(245, 245, 245, 0.96);
       box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
-      box-sizing: border-box;
       z-index: 50;
     }
 
@@ -772,7 +762,6 @@
       border: 2.5px solid rgba(255,255,255,0.45);
       border-right-color: white;
       border-radius: 50%;
-      box-sizing: border-box;
       display: inline-block;
       animation: spin 0.9s linear infinite;
       flex-shrink: 0;
@@ -816,7 +805,6 @@
       pointer-events: auto;
       z-index: 180;
       transition: opacity 0.22s ease, transform 0.22s ease;
-      box-sizing: border-box;
       text-align: center;
       white-space: nowrap;
     }
@@ -834,7 +822,6 @@
       align-items: center;
       justify-content: center;
       padding: 18px;
-      box-sizing: border-box;
       z-index: 100;
     }
 
@@ -848,7 +835,6 @@
       background: white;
       border-radius: 18px;
       padding: 14px 16px 16px;
-      box-sizing: border-box;
       box-shadow: 0 12px 30px rgba(0,0,0,0.25);
     }
 
@@ -900,7 +886,6 @@
       overflow-y: auto;
       -webkit-overflow-scrolling: touch;
       padding: 6px 10px calc(24px + env(safe-area-inset-bottom));
-      box-sizing: border-box;
     }
 
     .item-page-form {
@@ -915,7 +900,6 @@
       border-radius: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.10);
       border: 1px solid rgba(0,0,0,0.03);
-      box-sizing: border-box;
     }
 
     .item-page-bottom-actions {
@@ -973,7 +957,6 @@
       border: 1px solid #ccc;
       font-size: 16px;
       min-width: 0;
-      box-sizing: border-box;
       background: white;
     }
 
@@ -994,7 +977,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      box-sizing: border-box;
+      text-align: left;
     }
 
     .picker-arrow {
@@ -1016,7 +999,6 @@
       border-right: 2px solid #555;
       border-bottom: 2px solid #555;
       transform: rotate(45deg) translateY(-2px);
-      box-sizing: border-box;
     }
 
     .picker-menu {
@@ -1119,7 +1101,7 @@
 
 <body>
   <div class="startup-screen" id="startupScreen">
-    <div class="startup-card" id="startupCard">
+    <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
       <div class="startup-message" id="startupMessage"></div>
@@ -1134,9 +1116,7 @@
         <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" onclick="openHomeCancelConfirm()" aria-label="買い物をキャンセル">キャンセル</button>
 
         <div class="title-center">
-          <div class="title-with-help" id="titleHelpTarget" onclick="toggleShoppingHelpFromTitle(event)">
-            <h1 id="appTitle">日用品リスト</h1>
-          </div>
+          <h1 id="appTitle">日用品リスト</h1>
         </div>
 
         <button class="add-top-button" onclick="openAddModal()" aria-label="日用品を追加">日用品を追加</button>
@@ -1980,6 +1960,12 @@
       restoreItemsScroll(container, previousScrollTop, shouldInitializeScroll);
       updatePullRefreshVisual();
       updateActionButtons();
+
+      if (pendingFocusItemId) {
+        requestAnimationFrame(() => {
+          scrollToPendingFocusItem();
+        });
+      }
     }
 
     function revealAddedItem(id) {
@@ -2219,10 +2205,28 @@
       return getDisplayItems().filter(item => (item.category || "other") === (category || "other"));
     }
 
+    function createDoubleChevronSvg(direction) {
+      if (direction === "up") {
+        return `
+          <svg viewBox="0 0 12 14" aria-hidden="true">
+            <path d="M2 8L6 4L10 8"></path>
+            <path d="M2 12L6 8L10 12"></path>
+          </svg>
+        `;
+      }
+
+      return `
+        <svg viewBox="0 0 12 14" aria-hidden="true">
+          <path d="M2 2L6 6L10 2"></path>
+          <path d="M2 6L6 10L10 6"></path>
+        </svg>
+      `;
+    }
+
     function createCategoryHeading(category) {
       const heading = document.createElement("div");
       const isCollapsed = collapsedCategories.has(category || "other");
-      const arrow = isCollapsed ? "⌄" : "⌃";
+      const arrowDirection = isCollapsed ? "down" : "up";
 
       heading.className = `category-heading ${isCollapsed ? "collapsed" : ""}`;
 
@@ -2234,7 +2238,9 @@
           aria-label="${getCategoryName(category || "other")}の表示切り替え"
         >
           <span>${getCategoryName(category || "other")}</span>
-          <span class="category-arrow" aria-hidden="true">${arrow}</span>
+          <span class="category-arrow" aria-hidden="true">
+            ${createDoubleChevronSvg(arrowDirection)}
+          </span>
         </button>
       `;
 
@@ -2839,7 +2845,6 @@
       const shouldSave = finalizeReorderFromSnapshot();
 
       cleanupReorder();
-
       render();
 
       if (shouldSave) {
@@ -3298,16 +3303,6 @@
       }
 
       exitModeWithoutSaving();
-    }
-
-    function toggleShoppingHelpFromTitle(event) {
-      if (event) event.stopPropagation();
-
-      if (!shoppingMode || isModeSaving) return;
-
-      closeSwipedItemWithoutRender();
-
-      showToast("購入したら「購入」に切替 → 購入確定", 3600);
     }
 
     function openUpdateRetryModal() {
