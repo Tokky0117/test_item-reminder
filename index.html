@@ -24,7 +24,7 @@
       --shopping-header-color: #fff7e8;
       --shopping-accent-color: #a55a00;
 
-      --swipe-action-width: 116px;
+      --swipe-action-width: 124px;
     }
 
     * {
@@ -404,8 +404,10 @@
       border-radius: 8px;
       display: inline-flex;
       align-items: center;
+      justify-content: center;
       gap: 5px;
       max-width: 100%;
+      line-height: 1.2;
     }
 
     .category-heading-button:active {
@@ -416,15 +418,13 @@
       color: #777;
       font-size: 12px;
       line-height: 1;
+      width: 12px;
+      height: 12px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: transform 0.16s ease;
-    }
-
-    .category-heading.collapsed .category-arrow {
-      transform: rotate(-90deg);
+      transform: translateY(-0.5px);
     }
 
     .pull-refresh {
@@ -556,13 +556,25 @@
       display: flex;
       align-items: stretch;
       justify-content: flex-end;
+      gap: 6px;
+      padding: 4px 3px;
+      box-sizing: border-box;
       border-radius: 8px;
       overflow: hidden;
       z-index: 1;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.08s ease;
+    }
+
+    .row.swipe-open .swipe-actions,
+    .swipe-frame.swipe-active .swipe-actions {
+      opacity: 1;
+      pointer-events: auto;
     }
 
     .swipe-action-button {
-      width: 58px;
+      width: 56px;
       border: none;
       color: white;
       font-size: 12px;
@@ -574,15 +586,16 @@
       gap: 3px;
       padding: 0;
       box-sizing: border-box;
-      border-left: 1px solid rgba(255,255,255,0.24);
+      border-radius: 13px;
+      box-shadow: 0 2px 7px rgba(0,0,0,0.12);
     }
 
     .swipe-action-button.edit {
-      background: var(--primary-color);
+      background: #5a9fe8;
     }
 
     .swipe-action-button.delete {
-      background: var(--danger-color);
+      background: #e95b52;
     }
 
     .swipe-action-icon {
@@ -800,12 +813,12 @@
       font-size: 13px;
       line-height: 1.4;
       opacity: 0;
-      pointer-events: none;
+      pointer-events: auto;
       z-index: 180;
       transition: opacity 0.22s ease, transform 0.22s ease;
       box-sizing: border-box;
       text-align: center;
-      white-space: normal;
+      white-space: nowrap;
     }
 
     .toast.show {
@@ -907,10 +920,13 @@
 
     .item-page-bottom-actions {
       margin-top: 14px;
+      display: flex;
+      justify-content: center;
     }
 
     .item-page-save-bottom-button {
-      width: 100%;
+      flex: 0 1 300px;
+      width: min(300px, 100%);
       height: 46px;
       border: none;
       border-radius: 15px;
@@ -1136,7 +1152,7 @@
     </div>
   </div>
 
-  <div class="toast" id="toast"></div>
+  <div class="toast" id="toast" onclick="hideToast()"></div>
 
   <div class="modal-backdrop" id="itemModal">
     <div class="modal item-page-modal">
@@ -1273,7 +1289,7 @@
     const PULL_TRIGGER_DISTANCE = 72;
     const PULL_MAX_DISTANCE = 96;
 
-    const SWIPE_ACTION_WIDTH = 116;
+    const SWIPE_ACTION_WIDTH = 124;
     const SWIPE_OPEN_THRESHOLD = 32;
     const SWIPE_CLOSE_THRESHOLD = 24;
 
@@ -1333,6 +1349,7 @@
     let swipeBaseOffset = 0;
     let swipeMoved = false;
     let swipeCanceled = false;
+    let swipeDirection = null;
     let swipeFrameElement = null;
     let swipeItemElement = null;
 
@@ -2205,6 +2222,7 @@
     function createCategoryHeading(category) {
       const heading = document.createElement("div");
       const isCollapsed = collapsedCategories.has(category || "other");
+      const arrow = isCollapsed ? "⌄" : "⌃";
 
       heading.className = `category-heading ${isCollapsed ? "collapsed" : ""}`;
 
@@ -2216,7 +2234,7 @@
           aria-label="${getCategoryName(category || "other")}の表示切り替え"
         >
           <span>${getCategoryName(category || "other")}</span>
-          <span class="category-arrow" aria-hidden="true">⌄</span>
+          <span class="category-arrow" aria-hidden="true">${arrow}</span>
         </button>
       `;
 
@@ -2376,13 +2394,12 @@
       swipeBaseOffset = swipedItemId === id ? -SWIPE_ACTION_WIDTH : 0;
       swipeMoved = false;
       swipeCanceled = false;
+      swipeDirection = null;
 
       clearTimeout(reorderHoldTimer);
       reorderHoldTimer = setTimeout(() => {
         beginReorder(id, swipeCurrentY);
       }, REORDER_HOLD_MS);
-
-      swipeItemElement.classList.add("swiping");
     }
 
     function moveItemTouch(event) {
@@ -2401,24 +2418,33 @@
 
       const deltaX = swipeCurrentX - swipeStartX;
       const deltaY = swipeCurrentY - swipeStartY;
+      const absX = Math.abs(deltaX);
+      const absY = Math.abs(deltaY);
 
-      if (Math.abs(deltaX) > REORDER_CANCEL_MOVE || Math.abs(deltaY) > REORDER_CANCEL_MOVE) {
+      if (absX > REORDER_CANCEL_MOVE || absY > REORDER_CANCEL_MOVE) {
         clearTimeout(reorderHoldTimer);
       }
 
-      if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 8) {
+      if (!swipeDirection && (absX > 8 || absY > 8)) {
+        swipeDirection = absX > absY ? "horizontal" : "vertical";
+      }
+
+      if (swipeDirection === "vertical") {
         swipeCanceled = true;
-        resetSwipeVisual();
+        cancelItemTouch();
         return;
       }
 
-      if (Math.abs(deltaX) > 8) {
-        swipeMoved = true;
+      if (swipeDirection !== "horizontal") return;
+
+      swipeMoved = true;
+      event.preventDefault();
+
+      if (swipeFrameElement) {
+        swipeFrameElement.classList.add("swipe-active");
       }
 
-      if (Math.abs(deltaX) > 8) {
-        event.preventDefault();
-      }
+      swipeItemElement.classList.add("swiping");
 
       const offset = clamp(swipeBaseOffset + deltaX, -SWIPE_ACTION_WIDTH, 0);
       swipeItemElement.style.transform = `translateX(${offset}px)`;
@@ -2439,7 +2465,7 @@
 
       const deltaX = swipeCurrentX - swipeStartX;
 
-      if (!shoppingMode && !isModeSaving && !swipeCanceled) {
+      if (!shoppingMode && !isModeSaving && !swipeCanceled && swipeDirection === "horizontal") {
         if (swipeBaseOffset === 0) {
           if (deltaX <= -SWIPE_OPEN_THRESHOLD) {
             swipedItemId = id;
@@ -2471,6 +2497,7 @@
       swipeBaseOffset = 0;
       swipeMoved = false;
       swipeCanceled = false;
+      swipeDirection = null;
       swipeFrameElement = null;
       swipeItemElement = null;
     }
@@ -2479,6 +2506,10 @@
       if (swipeItemElement) {
         swipeItemElement.classList.remove("swiping");
         swipeItemElement.style.transform = "";
+      }
+
+      if (swipeFrameElement) {
+        swipeFrameElement.classList.remove("swipe-active");
       }
     }
 
@@ -3276,7 +3307,7 @@
 
       closeSwipedItemWithoutRender();
 
-      showToast("在庫なしの日用品を表示中。購入したものを「購入」に切り替えて、購入確定してください。", 3600);
+      showToast("購入したら「購入」に切替 → 購入確定", 3600);
     }
 
     function openUpdateRetryModal() {
@@ -3358,6 +3389,10 @@
       if (event.target.closest("#updateRetryModal")) return;
       if (event.target.closest("#conflictModal")) return;
       if (event.target.closest("#loadFailureModal")) return;
+
+      if (event.target.closest("#toast")) return;
+
+      hideToast();
 
       if (swipedItemId && !event.target.closest(".swipe-frame")) {
         closeSwipedItem();
