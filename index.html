@@ -223,17 +223,6 @@
       color: var(--shopping-accent-color);
       border: none;
       box-shadow: none;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 3px;
-    }
-
-    .shopping-switch-symbol {
-      font-size: 16px;
-      line-height: 1;
-      display: inline-block;
-      transform: translateY(-0.5px);
     }
 
     .shopping-button:active,
@@ -855,7 +844,7 @@
 
     #itemModal {
       padding: 0;
-      background: var(--bg-color);
+      background: transparent;
       align-items: stretch;
       justify-content: stretch;
       opacity: 1;
@@ -1146,9 +1135,7 @@
   <div class="app" id="app">
     <div class="header">
       <div class="title-row">
-        <button class="shopping-button" onclick="toggleShoppingMode()" aria-label="買い物リスト">
-          <span>買い物</span><span class="shopping-switch-symbol">⇅</span>
-        </button>
+        <button class="shopping-button" onclick="toggleShoppingMode()" aria-label="買い物リスト">買い物 ⇅</button>
         <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" onclick="openHomeCancelConfirm()" aria-label="買い物をキャンセル">キャンセル</button>
 
         <div class="title-center">
