@@ -55,7 +55,7 @@
       display: flex;
       flex-direction: column;
       background: var(--bg-color);
-      transition: background 0.48s ease;
+      transition: background 0.72s ease;
     }
 
     .app.shopping-mode {
@@ -157,7 +157,7 @@
       background: var(--bg-color);
       padding: 10px 12px 7px;
       position: relative;
-      transition: background 0.48s ease;
+      transition: background 0.72s ease;
     }
 
     .app.shopping-mode .header {
@@ -362,7 +362,7 @@
       -webkit-overflow-scrolling: touch;
       position: relative;
       overscroll-behavior-y: contain;
-      transition: background 0.48s ease;
+      transition: background 0.72s ease;
     }
 
     .app.shopping-mode #items {
@@ -698,35 +698,56 @@
     }
 
     .owner-mark {
-      min-width: 30px;
-      height: 26px;
-      border-radius: 999px;
+      min-width: 31px;
+      height: 27px;
       font-weight: bold;
       font-size: 12px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      padding: 0 7px;
-      border: 1px solid transparent;
+      padding: 0 7px 0 10px;
+      position: relative;
+      color: #777;
+      background: transparent;
+      border: none;
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .owner-mark::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 4px;
+      bottom: 4px;
+      width: 4px;
+      border-radius: 999px;
+      background: rgba(80,80,80,0.16);
     }
 
     .owner-mark.owner-common {
-      background: rgba(80,80,80,0.045);
       color: #777;
-      border-color: rgba(80,80,80,0.08);
+    }
+
+    .owner-mark.owner-common::before {
+      background: rgba(80,80,80,0.16);
     }
 
     .owner-mark.owner-mi {
-      background: rgba(255,85,135,0.075);
-      color: #a64c70;
-      border-color: rgba(255,85,135,0.13);
+      color: #7b5ca8;
+    }
+
+    .owner-mark.owner-mi::before {
+      background: rgba(150,115,205,0.45);
     }
 
     .owner-mark.owner-ka {
-      background: rgba(0,122,255,0.075);
-      color: #3f73a8;
-      border-color: rgba(0,122,255,0.13);
+      color: #9a5f49;
+    }
+
+    .owner-mark.owner-ka::before {
+      background: rgba(170,100,70,0.42);
     }
 
     .spare-badge {
@@ -759,13 +780,11 @@
 
     .stock-toggle-track {
       height: 34px;
-      min-width: 92px;
+      min-width: 102px;
       border-radius: 999px;
       display: inline-flex;
       align-items: center;
-      justify-content: center;
       position: relative;
-      padding: 0 14px;
       box-shadow: 0 1px 4px rgba(0,0,0,0.08), inset 0 0 0 1px rgba(0,0,0,0.06);
       transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
       overflow: hidden;
@@ -775,6 +794,7 @@
       position: relative;
       z-index: 2;
       line-height: 1;
+      transition: transform 0.18s ease;
     }
 
     .stock-toggle-knob {
@@ -783,7 +803,7 @@
       width: 26px;
       height: 26px;
       border-radius: 50%;
-      background: rgba(255,255,255,0.82);
+      background: rgba(255,255,255,0.86);
       box-shadow: 0 1px 4px rgba(0,0,0,0.12);
       z-index: 1;
       transition: left 0.18s ease, right 0.18s ease, transform 0.18s ease;
@@ -792,11 +812,15 @@
     .has-spare .stock-toggle-track {
       background: #e5f7ea;
       color: #167a35;
+      justify-content: flex-start;
+      padding: 0 36px 0 14px;
     }
 
     .no-spare .stock-toggle-track {
       background: #fff0df;
       color: #a55a00;
+      justify-content: flex-end;
+      padding: 0 14px 0 36px;
     }
 
     .has-spare .stock-toggle-knob {
@@ -807,72 +831,65 @@
       left: 4px;
     }
 
-    .shopping-check-badge {
+    .shopping-check-button {
       flex-shrink: 0;
+      min-width: 64px;
       height: 34px;
-      min-width: 76px;
-      border-radius: 999px;
-      padding: 0 11px 0 10px;
-      font-size: 12px;
-      font-weight: bold;
-      white-space: nowrap;
-      transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease, transform 0.08s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-      border: 1px solid transparent;
-      font-family: sans-serif;
+      border: none;
+      background: transparent;
+      padding: 0 3px;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       gap: 6px;
+      font-size: 12px;
+      font-weight: bold;
+      font-family: sans-serif;
+      color: #a55a00;
+      transition: opacity 0.18s ease, transform 0.08s ease, color 0.18s ease;
     }
 
-    .shopping-check-badge:active {
+    .shopping-check-button:active {
       transform: scale(0.95);
-      box-shadow: 0 1px 2px rgba(0,0,0,0.08);
     }
 
-    .shopping-check-badge:disabled {
+    .shopping-check-button:disabled {
       opacity: 0.45;
       transform: none;
-      box-shadow: none;
     }
 
-    .shopping-check-badge.checked {
-      background: #e5f7ea;
+    .shopping-check-button.checked {
       color: #167a35;
-      border-color: rgba(22,122,53,0.26);
     }
 
-    .shopping-check-badge.unchecked {
-      background: #fff7e8;
+    .shopping-check-button.unchecked {
       color: #a55a00;
-      border-color: rgba(165,90,0,0.26);
     }
 
     .shopping-checkbox {
-      width: 17px;
-      height: 17px;
+      width: 19px;
+      height: 19px;
       border-radius: 5px;
       border: 1.8px solid currentColor;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      background: rgba(255,255,255,0.58);
+      background: rgba(255,255,255,0.55);
     }
 
     .shopping-checkbox svg {
-      width: 13px;
-      height: 13px;
+      width: 14px;
+      height: 14px;
       stroke: currentColor;
-      stroke-width: 2.4;
+      stroke-width: 2.5;
       stroke-linecap: round;
       stroke-linejoin: round;
       fill: none;
       display: block;
     }
 
-    .shopping-check-badge.unchecked .shopping-checkbox svg {
+    .shopping-check-button.unchecked .shopping-checkbox svg {
       display: none;
     }
 
@@ -885,7 +902,7 @@
       background: rgba(245, 245, 245, 0.96);
       box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
       z-index: 50;
-      transition: background 0.48s ease, box-shadow 0.24s ease;
+      transition: background 0.72s ease, box-shadow 0.24s ease;
     }
 
     .purchase-complete-button {
@@ -1284,7 +1301,7 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver0.37</div>
+      <div class="startup-version" id="startupVersion">ver0.38</div>
       <div class="startup-message" id="startupMessage"></div>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
@@ -1452,7 +1469,7 @@
   </div>
 
   <script>
-    const APP_VERSION = "0.37";
+    const APP_VERSION = "0.38";
     const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
     const REFRESH_OFFSET = 56;
@@ -1469,8 +1486,6 @@
     const REORDER_AUTO_SCROLL_ZONE = 64;
     const REORDER_AUTO_SCROLL_MAX_SPEED = 9;
     const ORDER_STEP = 10;
-
-    const SHOPPING_ENTER_DELAY_MS = 90;
 
     const OWNER_TABS = [
       { key: "共", full: "共同", short: "共" },
@@ -1498,10 +1513,8 @@
     let startupToastTimer = null;
     let itemModalCloseTimer = null;
     let reorderHoldTimer = null;
-    let shoppingEnterTimer = null;
 
     let shoppingMode = false;
-    let shoppingModeContentReady = true;
     let shoppingModeItemIds = new Set();
     let activeOwnerTab = "all";
     let collapsedCategories = new Set();
@@ -1665,7 +1678,7 @@
     }
 
     function getItemsForOwnerTab(tabKey) {
-      const baseItems = shoppingMode && shoppingModeContentReady
+      const baseItems = shoppingMode
         ? items.filter(item => shoppingModeItemIds.has(item.id))
         : items;
 
@@ -1896,10 +1909,8 @@
     }
 
     function resetModesAndSelections() {
-      clearTimeout(shoppingEnterTimer);
       shoppingModeItemIds.clear();
       shoppingMode = false;
-      shoppingModeContentReady = true;
       isModeSaving = false;
       modeStartItems = null;
       swipedItemId = null;
@@ -2085,7 +2096,6 @@
           applySaveSuccess(result);
 
           shoppingMode = false;
-          shoppingModeContentReady = true;
           isModeSaving = false;
           shoppingModeItemIds.clear();
           modeStartItems = null;
@@ -2114,7 +2124,6 @@
 
     function exitModeWithoutSaving() {
       shoppingMode = false;
-      shoppingModeContentReady = true;
       isModeSaving = false;
       shoppingModeItemIds.clear();
       modeStartItems = null;
@@ -2137,7 +2146,7 @@
       const displayItems = getDisplayItems();
 
       if (displayItems.length === 0) {
-        if (shoppingMode && shoppingModeContentReady) {
+        if (shoppingMode) {
           renderEmptyShoppingMessage(container);
         } else {
           renderEmptyListMessage(container);
@@ -2396,7 +2405,7 @@
     }
 
     function getDisplayItems() {
-      let displayItems = shoppingMode && shoppingModeContentReady
+      let displayItems = shoppingMode
         ? items.filter(item => shoppingModeItemIds.has(item.id))
         : items;
 
@@ -2565,7 +2574,7 @@
 
       return `
         <button
-          class="shopping-check-badge ${checked ? "checked" : "unchecked"}"
+          class="shopping-check-button ${checked ? "checked" : "unchecked"}"
           type="button"
           ${isModeSaving || isReordering ? "disabled" : ""}
           onclick="event.stopPropagation(); toggleSpare(${index})"
@@ -2612,7 +2621,7 @@
           ${hasNote ? `<div class="note-text">${escapeHtml(item.note)}</div>` : ""}
         </div>
 
-        ${shoppingMode && shoppingModeContentReady ? createShoppingCheckHtml(item, index) : createStockToggleHtml(item, index)}
+        ${shoppingMode ? createShoppingCheckHtml(item, index) : createStockToggleHtml(item, index)}
       `;
     }
 
@@ -2620,7 +2629,7 @@
       if (shoppingMode || isModeSaving || isReordering) return;
       if (!event.touches || event.touches.length !== 1) return;
       if (event.target.closest(".spare-badge")) return;
-      if (event.target.closest(".shopping-check-badge")) return;
+      if (event.target.closest(".shopping-check-button")) return;
       if (event.target.closest(".swipe-action-button")) return;
 
       swipeFrameElement = event.currentTarget;
@@ -3198,10 +3207,8 @@
       if (isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
-      clearTimeout(shoppingEnterTimer);
 
       shoppingMode = true;
-      shoppingModeContentReady = false;
       modeStartItems = cloneItems(items);
       resetPullRefreshVisual();
 
@@ -3212,11 +3219,6 @@
       );
 
       render();
-
-      shoppingEnterTimer = setTimeout(() => {
-        shoppingModeContentReady = true;
-        render();
-      }, SHOPPING_ENTER_DELAY_MS);
     }
 
     function openItemModalWithPageTransition() {
