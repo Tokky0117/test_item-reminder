@@ -217,8 +217,7 @@
     .shopping-button,
     .shopping-cancel-top-button,
     .add-top-button,
-    .item-page-cancel-button,
-    .item-page-save-button {
+    .item-page-cancel-button {
       position: absolute;
       top: 50%;
       border: none;
@@ -262,14 +261,13 @@
       color: var(--primary-color);
     }
 
-    .item-page-save-button {
+    .item-page-header-spacer {
+      position: absolute;
       right: 0;
-      background: transparent;
-      color: var(--primary-color);
-    }
-
-    .item-page-save-button:disabled {
-      color: #aaa;
+      top: 50%;
+      width: 72px;
+      height: 34px;
+      transform: translateY(-50%);
     }
 
     .shopping-button:disabled,
@@ -415,18 +413,14 @@
     }
 
     .category-arrow {
-      width: 15px;
-      height: 15px;
-      border-radius: 50%;
-      background: rgba(0,0,0,0.05);
       color: #777;
-      font-size: 10px;
+      font-size: 12px;
       line-height: 1;
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex-shrink: 0;
-      transition: transform 0.16s ease, background 0.16s ease;
+      transition: transform 0.16s ease;
     }
 
     .category-heading.collapsed .category-arrow {
@@ -519,6 +513,25 @@
       opacity: 0.82;
     }
 
+    .row.item-highlight .item {
+      animation: itemHighlight 1.6s ease;
+    }
+
+    @keyframes itemHighlight {
+      0% {
+        border-color: rgba(0,122,255,0.55);
+        box-shadow: 0 0 0 3px rgba(0,122,255,0.14), 0 2px 8px rgba(0,0,0,0.10);
+      }
+      65% {
+        border-color: rgba(0,122,255,0.42);
+        box-shadow: 0 0 0 3px rgba(0,122,255,0.08), 0 2px 8px rgba(0,0,0,0.10);
+      }
+      100% {
+        border-color: rgba(0,0,0,0.03);
+        box-shadow: 0 2px 8px rgba(0,0,0,0.10);
+      }
+    }
+
     .empty-list-message {
       text-align: center;
       color: #777;
@@ -551,8 +564,7 @@
     .swipe-action-button {
       width: 58px;
       border: none;
-      background: white;
-      color: #333;
+      color: white;
       font-size: 12px;
       font-weight: bold;
       display: flex;
@@ -562,11 +574,15 @@
       gap: 3px;
       padding: 0;
       box-sizing: border-box;
-      border-left: 1px solid rgba(0,0,0,0.06);
+      border-left: 1px solid rgba(255,255,255,0.24);
+    }
+
+    .swipe-action-button.edit {
+      background: var(--primary-color);
     }
 
     .swipe-action-button.delete {
-      color: var(--danger-color);
+      background: var(--danger-color);
     }
 
     .swipe-action-icon {
@@ -651,7 +667,7 @@
     }
 
     .owner-mark {
-      min-width: 34px;
+      min-width: 30px;
       height: 26px;
       border-radius: 999px;
       background: rgba(0,0,0,0.035);
@@ -661,19 +677,9 @@
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 2px;
       flex-shrink: 0;
-      padding: 0 7px 0 5px;
+      padding: 0 7px;
       box-sizing: border-box;
-    }
-
-    .owner-mark::before {
-      content: "‹";
-      color: #b8b8bd;
-      font-size: 15px;
-      font-weight: bold;
-      line-height: 1;
-      margin-top: -1px;
     }
 
     .spare-badge {
@@ -799,55 +805,12 @@
       transition: opacity 0.22s ease, transform 0.22s ease;
       box-sizing: border-box;
       text-align: center;
-      white-space: nowrap;
+      white-space: normal;
     }
 
     .toast.show {
       opacity: 1;
       transform: translate(-50%, 0);
-    }
-
-    .help-bubble {
-      position: fixed;
-      top: var(--help-bubble-top, calc(48px + env(safe-area-inset-top)));
-      left: var(--help-bubble-left, 50%);
-      width: max-content;
-      max-width: min(250px, calc(100vw - 24px));
-      background: rgba(40, 40, 40, 0.92);
-      color: white;
-      border-radius: 13px;
-      padding: 8px 10px;
-      box-sizing: border-box;
-      font-size: 12px;
-      line-height: 1.42;
-      z-index: 160;
-      opacity: 0;
-      transform: translate(-50%, -5px);
-      pointer-events: none;
-      transition: opacity 0.24s ease, transform 0.24s ease;
-      white-space: pre-line;
-    }
-
-    .help-bubble.show {
-      opacity: 1;
-      transform: translate(-50%, 0);
-      pointer-events: auto;
-    }
-
-    .help-bubble.hide {
-      opacity: 0;
-      transform: translate(-50%, -5px);
-    }
-
-    .help-bubble::before {
-      content: "";
-      position: absolute;
-      top: -7px;
-      left: var(--help-bubble-arrow-left, 50%);
-      transform: translateX(-50%);
-      border-left: 7px solid transparent;
-      border-right: 7px solid transparent;
-      border-bottom: 7px solid rgba(40, 40, 40, 0.92);
     }
 
     .modal-backdrop {
@@ -940,6 +903,28 @@
       box-shadow: 0 2px 8px rgba(0,0,0,0.10);
       border: 1px solid rgba(0,0,0,0.03);
       box-sizing: border-box;
+    }
+
+    .item-page-bottom-actions {
+      margin-top: 14px;
+    }
+
+    .item-page-save-bottom-button {
+      width: 100%;
+      height: 46px;
+      border: none;
+      border-radius: 15px;
+      background: var(--primary-color);
+      color: white;
+      font-size: 16px;
+      font-weight: bold;
+      box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+    }
+
+    .item-page-save-bottom-button:disabled {
+      background: #c8c8c8;
+      color: #777;
+      box-shadow: none;
     }
 
     .modal h2 {
@@ -1153,10 +1138,6 @@
 
   <div class="toast" id="toast"></div>
 
-  <div class="help-bubble" id="helpBubble">
-    <div id="helpBubbleText"></div>
-  </div>
-
   <div class="modal-backdrop" id="itemModal">
     <div class="modal item-page-modal">
       <div class="item-page-header">
@@ -1165,7 +1146,7 @@
           <div class="item-page-title-center">
             <div class="item-page-title" id="itemModalTitle">日用品を追加</div>
           </div>
-          <button class="item-page-save-button" id="modalConfirm" onclick="confirmItemModal()" disabled>決定</button>
+          <div class="item-page-header-spacer" aria-hidden="true"></div>
         </div>
       </div>
 
@@ -1203,6 +1184,17 @@
                 <div class="picker-menu" id="ownerPickerMenu"></div>
               </div>
             </div>
+          </div>
+
+          <div class="item-page-bottom-actions">
+            <button
+              class="item-page-save-bottom-button"
+              id="modalConfirm"
+              onclick="confirmItemModal()"
+              disabled
+            >
+              決定
+            </button>
           </div>
         </div>
       </div>
@@ -1315,7 +1307,6 @@
 
     let items = [];
     let toastTimer = null;
-    let helpBubbleTimer = null;
     let startupToastTimer = null;
     let itemModalCloseTimer = null;
     let reorderHoldTimer = null;
@@ -1324,6 +1315,10 @@
     let shoppingModeItemIds = new Set();
     let activeOwnerTab = "all";
     let collapsedCategories = new Set();
+
+    let pendingFocusItemId = null;
+    let highlightedItemId = null;
+    let highlightTimer = null;
 
     let modalMode = "add";
     let editingItemId = null;
@@ -1473,7 +1468,6 @@
       if (isModeSaving || isReordering) return;
       activeOwnerTab = tabKey;
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
       render();
     }
 
@@ -1653,7 +1647,6 @@
       }
 
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
       render();
     }
 
@@ -1709,7 +1702,6 @@
       isModeSaving = false;
       modeStartItems = null;
       swipedItemId = null;
-      hideHelpBubble();
       resetPullRefreshVisual();
     }
 
@@ -1895,7 +1887,6 @@
           isModeSaving = false;
           shoppingModeItemIds.clear();
           modeStartItems = null;
-          hideHelpBubble();
           resetPullRefreshVisual();
           render();
 
@@ -1924,7 +1915,6 @@
       isModeSaving = false;
       shoppingModeItemIds.clear();
       modeStartItems = null;
-      hideHelpBubble();
       resetPullRefreshVisual();
       render();
     }
@@ -1973,6 +1963,52 @@
       restoreItemsScroll(container, previousScrollTop, shouldInitializeScroll);
       updatePullRefreshVisual();
       updateActionButtons();
+    }
+
+    function revealAddedItem(id) {
+      const item = items.find(item => item.id === id);
+      if (!item) return;
+
+      const category = item.category || "other";
+
+      collapsedCategories.delete(category);
+
+      if (activeOwnerTab !== "all" && item.icon !== activeOwnerTab) {
+        activeOwnerTab = "all";
+      }
+
+      pendingFocusItemId = id;
+      highlightedItemId = id;
+
+      clearTimeout(highlightTimer);
+
+      render();
+
+      setTimeout(() => {
+        scrollToPendingFocusItem();
+      }, 320);
+
+      highlightTimer = setTimeout(() => {
+        highlightedItemId = null;
+        render();
+      }, 1800);
+    }
+
+    function scrollToPendingFocusItem() {
+      if (!pendingFocusItemId) return;
+
+      const targetId = pendingFocusItemId;
+      pendingFocusItemId = null;
+
+      const rows = Array.from(document.querySelectorAll(".row[data-item-id]"));
+      const target = rows.find(row => row.dataset.itemId === targetId);
+
+      if (!target) return;
+
+      target.scrollIntoView({
+        behavior: "smooth",
+        block: "center"
+      });
     }
 
     function updateAppModeClasses() {
@@ -2179,8 +2215,8 @@
           onclick="toggleCategoryCollapse('${category || "other"}')"
           aria-label="${getCategoryName(category || "other")}の表示切り替え"
         >
-          <span class="category-arrow" aria-hidden="true">⌄</span>
           <span>${getCategoryName(category || "other")}</span>
+          <span class="category-arrow" aria-hidden="true">⌄</span>
         </button>
       `;
 
@@ -2213,9 +2249,11 @@
       const index = items.findIndex(baseItem => baseItem.id === item.id);
       const isOpen = swipedItemId === item.id;
       const isActiveReorder = isReordering && reorderItemId === item.id;
+      const shouldHighlight = highlightedItemId === item.id;
       const row = document.createElement("div");
 
-      row.className = `row ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""}`;
+      row.className = `row ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""} ${shouldHighlight ? "item-highlight" : ""}`;
+      row.dataset.itemId = item.id;
 
       if (isActiveReorder) {
         row.style.setProperty("--reorder-offset-y", reorderDragOffset + "px");
@@ -2453,7 +2491,6 @@
       closeSwipedItemWithoutRender();
       resetSwipeVisual();
       resetPullRefreshVisual();
-      hideHelpBubble();
 
       reorderStartItems = cloneItems(items);
       reorderCategory = item.category || "other";
@@ -2875,7 +2912,6 @@
       if (index < 0 || !items[index]) return;
 
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
       items[index].hasSpare = !items[index].hasSpare;
 
       if (shoppingMode) {
@@ -2890,7 +2926,6 @@
       if (isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
 
       shoppingMode = true;
       modeStartItems = cloneItems(items);
@@ -2909,7 +2944,6 @@
       if (shoppingMode || isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
 
       modalMode = "add";
       editingItemId = null;
@@ -2936,7 +2970,6 @@
       if (isModeSaving || isReordering) return;
 
       closeSwipedItemWithoutRender();
-      hideHelpBubble();
 
       const item = items.find(item => item.id === id);
       if (!item) return;
@@ -3091,8 +3124,10 @@
 
       if (!name) return;
 
+      let addedItemId = null;
+
       if (modalMode === "add") {
-        addItemFromModal(name, note);
+        addedItemId = addItemFromModal(name, note);
       }
 
       if (modalMode === "edit") {
@@ -3101,14 +3136,20 @@
 
       closeItemModal();
       saveImmediateChange();
-      render();
+
+      if (addedItemId) {
+        revealAddedItem(addedItemId);
+      } else {
+        render();
+      }
     }
 
     function addItemFromModal(name, note) {
       const category = modalCategory || "other";
+      const id = createId();
 
       items.push({
-        id: createId(),
+        id: id,
         name: name,
         hasSpare: false,
         note: note,
@@ -3116,6 +3157,8 @@
         category: category,
         categoryOrder: getNextCategoryOrder(category)
       });
+
+      return id;
     }
 
     function updateItemFromModal(name, note) {
@@ -3178,7 +3221,6 @@
 
     function openPurchaseConfirm() {
       if (!shoppingMode || !hasModeChanges() || isModeSaving) return;
-      hideHelpBubble();
       document.getElementById("purchaseConfirmModal").classList.add("show");
     }
 
@@ -3196,8 +3238,6 @@
     function openHomeCancelConfirm() {
       if (isModeSaving) return;
       if (!shoppingMode) return;
-
-      hideHelpBubble();
 
       if (!hasModeChanges()) {
         exitModeWithoutSaving();
@@ -3234,75 +3274,13 @@
 
       if (!shoppingMode || isModeSaving) return;
 
-      const bubble = document.getElementById("helpBubble");
-      const text = document.getElementById("helpBubbleText");
-      const target = document.getElementById("titleHelpTarget");
-
-      if (!bubble || !text || !target) return;
-
-      if (bubble.classList.contains("show")) {
-        hideHelpBubble();
-        return;
-      }
-
       closeSwipedItemWithoutRender();
 
-      text.textContent =
-        "在庫がない日用品だけを表示します。\n購入した日用品を「購入」に切り替え、購入確定してください。";
-
-      positionHelpBubble(target);
-
-      clearTimeout(helpBubbleTimer);
-      bubble.classList.remove("hide");
-      bubble.classList.add("show");
-
-      helpBubbleTimer = setTimeout(() => {
-        hideHelpBubble();
-      }, 10000);
-    }
-
-    function positionHelpBubble(target) {
-      const bubble = document.getElementById("helpBubble");
-      if (!bubble || !target) return;
-
-      const rect = target.getBoundingClientRect();
-      const viewportWidth = window.innerWidth || document.documentElement.clientWidth;
-      const bubbleHalfWidth = 125;
-      const margin = 12;
-
-      const rawCenter = rect.left + rect.width / 2;
-      const clampedCenter = Math.min(
-        Math.max(rawCenter, margin + bubbleHalfWidth),
-        viewportWidth - margin - bubbleHalfWidth
-      );
-
-      const top = rect.bottom + 8;
-      const arrowLeft = rawCenter - clampedCenter + bubbleHalfWidth;
-
-      bubble.style.setProperty("--help-bubble-left", clampedCenter + "px");
-      bubble.style.setProperty("--help-bubble-top", top + "px");
-      bubble.style.setProperty("--help-bubble-arrow-left", arrowLeft + "px");
-    }
-
-    function hideHelpBubble() {
-      const bubble = document.getElementById("helpBubble");
-      if (!bubble) return;
-
-      clearTimeout(helpBubbleTimer);
-
-      if (!bubble.classList.contains("show")) return;
-
-      bubble.classList.add("hide");
-      bubble.classList.remove("show");
-
-      setTimeout(() => {
-        bubble.classList.remove("hide");
-      }, 260);
+      showToast("在庫なしの日用品を表示中。購入したものを「購入」に切り替えて、購入確定してください。", 3600);
     }
 
     function openUpdateRetryModal() {
       hideToast();
-      hideHelpBubble();
       resetPullRefreshVisual();
       document.getElementById("updateRetryModal").classList.add("show");
     }
@@ -3323,7 +3301,6 @@
 
     function openConflictModal() {
       hideToast();
-      hideHelpBubble();
       resetPullRefreshVisual();
       document.getElementById("conflictModal").classList.add("show");
     }
@@ -3354,7 +3331,6 @@
 
       isLoadFailureModalOpen = true;
       hideToast();
-      hideHelpBubble();
       resetPullRefreshVisual();
 
       document.getElementById("loadFailureMessage").textContent = message;
@@ -3385,10 +3361,6 @@
 
       if (swipedItemId && !event.target.closest(".swipe-frame")) {
         closeSwipedItem();
-      }
-
-      if (!event.target.closest(".help-bubble") && !event.target.closest("#titleHelpTarget")) {
-        hideHelpBubble();
       }
     });
 
