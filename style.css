@@ -290,10 +290,13 @@ h1,
 
 .shopping-button:active,
 .shopping-cancel-top-button:active,
-.add-top-button:active,
-.shopping-copy-button:active,
 .item-page-cancel-button:active {
   transform: translateY(-50%) scale(0.96);
+}
+
+.icon-top-button:active {
+  transform: translateY(-50%);
+  opacity: 0.65;
 }
 
 .shopping-cancel-top-button {
@@ -331,12 +334,14 @@ h1,
   display: none;
 }
 
-.shopping-copy-button.copied::before {
-  content: "✓";
-  font-size: 25px;
-  line-height: 1;
-  font-weight: bold;
-  color: #167a35;
+.copy-done-icon {
+  display: none;
+  color: var(--primary-color);
+  stroke-width: 2.3;
+}
+
+.shopping-copy-button.copied .copy-done-icon {
+  display: block;
 }
 
 .shopping-copy-button {
@@ -848,6 +853,16 @@ h1,
 
 .spare-badge:active {
   transform: scale(0.95);
+}
+
+.app.has-swipe-open .spare-badge,
+.app.has-swipe-open .shopping-check-button {
+  pointer-events: none;
+}
+
+.app.has-swipe-open .spare-badge:active,
+.app.has-swipe-open .shopping-check-button:active {
+  transform: none;
 }
 
 .spare-badge:disabled {
@@ -1366,6 +1381,25 @@ h1,
   line-height: 1.35;
   margin: 0 0 12px;
   white-space: normal;
+}
+
+.loading-message {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  min-height: 44px;
+}
+
+.inline-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2.5px solid rgba(0,122,255,0.22);
+  border-right-color: var(--primary-color);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.9s linear infinite;
+  flex-shrink: 0;
 }
 
 #loadFailureMessage,
