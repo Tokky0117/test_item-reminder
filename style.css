@@ -1275,6 +1275,16 @@ h1,
   white-space: normal;
 }
 
-#loadFailureMessage {
+#loadFailureMessage,
+#updateRetryMessage {
   white-space: pre-line;
+}
+
+.retry-actions {
+  flex-direction: column;
+}
+
+.retry-actions .cancel-button,
+.retry-actions .confirm-button {
+  width: 100%;
 }
