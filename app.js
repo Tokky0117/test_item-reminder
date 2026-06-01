@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.6";
+const APP_VERSION = "1.0.7";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -15,6 +15,7 @@ const SWIPE_OPEN_THRESHOLD = 32;
 const SWIPE_CLOSE_THRESHOLD = 24;
 
 const REORDER_HOLD_MS = 520;
+const COPY_FEEDBACK_MS = 1400;
 const REORDER_CANCEL_MOVE = 8;
 const REORDER_STEP_DISTANCE = 44;
 const REORDER_AUTO_SCROLL_ZONE = 64;
@@ -1251,9 +1252,12 @@ function startItemTouch(event, id) {
     return;
   }
 
-  if (event.target.closest(".spare-badge")) return;
-  if (event.target.closest(".shopping-check-button")) return;
   if (event.target.closest(".swipe-action-button")) return;
+
+  const isOpenItem = swipedItemId === id;
+
+  if (!isOpenItem && event.target.closest(".spare-badge")) return;
+  if (!isOpenItem && event.target.closest(".shopping-check-button")) return;
 
   swipeFrameElement = event.currentTarget;
   swipeItemElement = swipeFrameElement.querySelector(".item");
@@ -1271,9 +1275,11 @@ function startItemTouch(event, id) {
   swipeDirection = null;
 
   clearTimeout(reorderHoldTimer);
-  reorderHoldTimer = setTimeout(() => {
-    beginReorder(id, swipeCurrentY);
-  }, REORDER_HOLD_MS);
+  if (!isOpenItem) {
+    reorderHoldTimer = setTimeout(() => {
+      beginReorder(id, swipeCurrentY);
+    }, REORDER_HOLD_MS);
+  }
 }
 
 function moveItemTouch(event) {
@@ -1338,6 +1344,13 @@ function endItemTouch(event, id) {
   }
 
   const deltaX = swipeCurrentX - swipeStartX;
+
+  if (swipedItemId === id && !swipeCanceled && !swipeMoved) {
+    swipedItemId = null;
+    cancelItemTouch();
+    render();
+    return;
+  }
 
   if (!shoppingMode && !isModeSaving && !swipeCanceled && swipeDirection === "horizontal") {
     if (swipeBaseOffset === 0) {
@@ -1923,7 +1936,7 @@ function showCopyButtonDone() {
 
   copyButtonFeedbackTimer = setTimeout(() => {
     button.classList.remove("copied");
-  }, 1200);
+  }, COPY_FEEDBACK_MS);
 }
 
 async function copyShoppingList() {
@@ -1946,11 +1959,11 @@ async function copyShoppingList() {
     }
 
     showCopyButtonDone();
-    showToast("買い物リストをコピーしました");
+    showToast("買い物リストをコピーしました", COPY_FEEDBACK_MS);
   } catch (error) {
     if (copyTextFallback(text)) {
       showCopyButtonDone();
-      showToast("買い物リストをコピーしました");
+      showToast("買い物リストをコピーしました", COPY_FEEDBACK_MS);
     } else {
       showToast("コピーできませんでした");
     }
@@ -2375,12 +2388,12 @@ function setConflictModalLoading(isLoading) {
   const actions = document.getElementById("conflictActions");
 
   if (title) {
-    title.textContent = "更新確認";
+    title.textContent = isLoading ? "更新キャンセル" : "更新確認";
   }
 
   if (message) {
     if (isLoading) {
-      message.innerHTML = '<span class="inline-spinner" aria-hidden="true"></span><span>最新リストを読み込んでいます…</span>';
+      message.innerHTML = '<span class="inline-spinner" aria-hidden="true"></span><span>最新リストを読み込んでいます。</span>';
       message.classList.add("loading-message");
     } else {
       message.innerHTML = "他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。";
