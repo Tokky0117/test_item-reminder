@@ -1,5 +1,10 @@
-const APP_VERSION = "1.0.1";
+// ========================================
+// 基本設定
+// ========================================
+const APP_VERSION = "1.0.2";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
+
+const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
 
 const REFRESH_OFFSET = 56;
 const PULL_TRIGGER_DISTANCE = 72;
@@ -37,6 +42,9 @@ const CATEGORY_LABELS = [
   { key: "other", name: "その他" }
 ];
 
+// ========================================
+// 状態管理
+// ========================================
 let items = [];
 let toastTimer = null;
 let startupToastTimer = null;
@@ -106,7 +114,11 @@ let pullDistance = 0;
 let isPulling = false;
 
 let isLoadFailureModalOpen = false;
+let lastSavePayloadLength = 0;
 
+// ========================================
+// 起動画面・トースト
+// ========================================
 function setupStartupScreen() {
   const visual = document.getElementById("startupVisual");
   const title = document.getElementById("startupTitle");
@@ -437,6 +449,9 @@ function getOwnerMarkClass(icon) {
   return "owner-common";
 }
 
+// ========================================
+// データ読み込み・保存
+// ========================================
 function resetModesAndSelections() {
   shoppingModeItemIds.clear();
   shoppingMode = false;
@@ -544,19 +559,33 @@ function requestJsonp(params) {
   });
 }
 
+function buildSavePayload(force) {
+  return {
+    action: "saveAll",
+    baseVersion: serverVersion || 0,
+    force: force === true,
+    items: items
+  };
+}
+
+function getSavePayloadText(force) {
+  return JSON.stringify(buildSavePayload(force));
+}
+
+function isLargeSavePayload() {
+  return lastSavePayloadLength >= SAVE_PAYLOAD_WARNING_LENGTH;
+}
+
 async function saveItemsToServer(options = {}) {
   const force = options.force === true;
+  const payloadText = getSavePayloadText(force);
+  lastSavePayloadLength = payloadText.length;
 
   return requestJsonp({
     action: "saveAll",
     baseVersion: String(serverVersion || 0),
     force: force ? "true" : "false",
-    payload: JSON.stringify({
-      action: "saveAll",
-      baseVersion: serverVersion || 0,
-      force: force,
-      items: items
-    })
+    payload: payloadText
   });
 }
 
@@ -660,6 +689,9 @@ function exitModeWithoutSaving() {
   render();
 }
 
+// ========================================
+// 描画
+// ========================================
 function render() {
   updateAppModeClasses();
   renderOwnerTabs();
@@ -1265,6 +1297,9 @@ function endItemTouch(event, id) {
   render();
 }
 
+// ========================================
+// スワイプ操作
+// ========================================
 function cancelItemTouch() {
   clearTimeout(reorderHoldTimer);
   resetSwipeVisual();
@@ -1630,6 +1665,9 @@ function finishReorder() {
   }, 300);
 }
 
+// ========================================
+// 並び替え
+// ========================================
 function cancelReorder() {
   if (!isReordering) return;
 
@@ -2008,6 +2046,9 @@ function updateItemFromModal(name, note) {
   normalizeCategoryOrderFor(modalCategory || "other");
 }
 
+// ========================================
+// 追加・編集・削除・買い物モード
+// ========================================
 function openDeleteConfirm(id) {
   if (isModeSaving || isReordering) return;
 
@@ -2059,6 +2100,9 @@ function confirmPurchaseComplete() {
   commitModeAndExit("購入内容を保存しました");
 }
 
+// ========================================
+// モーダル
+// ========================================
 function openHomeCancelConfirm() {
   if (isModeSaving) return;
   if (!shoppingMode) return;
@@ -2093,9 +2137,25 @@ function confirmHomeCancel() {
   exitModeWithoutSaving();
 }
 
+function getUpdateRetryMessage() {
+  let message = "サーバーへの更新に失敗しました。\n画面上の変更はまだ保存されていません。";
+
+  if (isLargeSavePayload()) {
+    message += "\nデータ量が多くなっている可能性があります。";
+  }
+
+  return message;
+}
+
 function openUpdateRetryModal() {
   hideToast();
   resetPullRefreshVisual();
+
+  const message = document.getElementById("updateRetryMessage");
+  if (message) {
+    message.textContent = getUpdateRetryMessage();
+  }
+
   document.getElementById("updateRetryModal").classList.add("show");
 }
 
@@ -2111,6 +2171,13 @@ function retryPendingUpdate() {
     pendingUpdateAction = null;
     action();
   }
+}
+
+function cancelPendingUpdate() {
+  closeUpdateRetryModal();
+  pendingUpdateAction = null;
+  resetModesAndSelections();
+  loadItems({ afterLoadMessage: "更新をキャンセルし、最新リストを読み込みました" });
 }
 
 function openConflictModal() {
@@ -2187,6 +2254,9 @@ startStartupToastTimer();
 setupPullToRefresh();
 loadItems();
 
+// ========================================
+// 初期化
+// ========================================
 if ("serviceWorker" in navigator) {
   navigator.serviceWorker.register("./sw.js");
 }
