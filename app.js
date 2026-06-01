@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.5";
+const APP_VERSION = "1.0.6";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -475,6 +475,23 @@ function isBlockingModalOpen() {
   return isLoadFailureModalOpen;
 }
 
+function applyLoadedItemsResponse(response) {
+  const loadedItems = Array.isArray(response) ? response : (response.items || []);
+
+  if (!Array.isArray(response) && response.version !== undefined) {
+    serverVersion = Number(response.version) || 0;
+  }
+
+  items = normalizeItems(loadedItems);
+
+  if (!shoppingMode) {
+    shoppingModeItemIds.clear();
+  }
+
+  render();
+  hideStartupScreen();
+}
+
 function loadItems(options = {}) {
   const fromPull = options.fromPull === true;
   const afterLoadMessage = options.afterLoadMessage || "";
@@ -494,20 +511,7 @@ function loadItems(options = {}) {
   const callbackName = "loadItemsCallback_" + Date.now();
 
   window[callbackName] = function(response) {
-    const loadedItems = Array.isArray(response) ? response : (response.items || []);
-
-    if (!Array.isArray(response) && response.version !== undefined) {
-      serverVersion = Number(response.version) || 0;
-    }
-
-    items = normalizeItems(loadedItems);
-
-    if (!shoppingMode) {
-      shoppingModeItemIds.clear();
-    }
-
-    render();
-    hideStartupScreen();
+    applyLoadedItemsResponse(response);
 
     if (afterLoadMessage) {
       showToast(afterLoadMessage);
@@ -538,6 +542,11 @@ function loadItems(options = {}) {
   };
 
   document.body.appendChild(script);
+}
+
+async function loadLatestItemsForConflictCancel() {
+  const response = await requestJsonp({});
+  applyLoadedItemsResponse(response);
 }
 
 function requestJsonp(params) {
@@ -699,6 +708,31 @@ function exitModeWithoutSaving() {
   render();
 }
 
+function setupSwipeCloseGuards() {
+  const container = document.getElementById("items");
+  if (!container) return;
+
+  container.addEventListener("touchstart", event => {
+    if (!swipedItemId) return;
+    if (event.target.closest(".swipe-action-button")) return;
+
+    const openRow = event.target.closest(".row.swipe-open");
+    if (openRow) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    closeSwipedItem();
+  }, { passive: false, capture: true });
+
+  container.addEventListener("touchmove", event => {
+    if (!swipedItemId) return;
+    if (event.target.closest(".swipe-action-button")) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+  }, { passive: false, capture: true });
+}
+
 // ========================================
 // 描画
 // ========================================
@@ -811,6 +845,7 @@ function updateAppModeClasses() {
 
   app.classList.toggle("shopping-mode", shoppingMode);
   app.classList.toggle("reordering", isReordering);
+  app.classList.toggle("has-swipe-open", !!swipedItemId);
   document.body.classList.toggle("shopping-mode", shoppingMode);
 
   if (themeColorMeta) {
@@ -1208,6 +1243,14 @@ function createItemContentHtml(item, index) {
 function startItemTouch(event, id) {
   if (shoppingMode || isModeSaving || isReordering) return;
   if (!event.touches || event.touches.length !== 1) return;
+
+  if (swipedItemId && swipedItemId !== id) {
+    event.preventDefault();
+    event.stopPropagation();
+    closeSwipedItem();
+    return;
+  }
+
   if (event.target.closest(".spare-badge")) return;
   if (event.target.closest(".shopping-check-button")) return;
   if (event.target.closest(".swipe-action-button")) return;
@@ -1742,6 +1785,7 @@ function handleItemTap(event, id) {
     event.stopPropagation();
     closeSwipedItem();
   } else if (swipedItemId && swipedItemId !== id) {
+    event.stopPropagation();
     closeSwipedItem();
   }
 }
@@ -2325,21 +2369,56 @@ function cancelPendingUpdate() {
   loadItems({ afterLoadMessage: "更新をキャンセルし、最新リストを読み込みました" });
 }
 
+function setConflictModalLoading(isLoading) {
+  const title = document.getElementById("conflictTitle");
+  const message = document.getElementById("conflictMessage");
+  const actions = document.getElementById("conflictActions");
+
+  if (title) {
+    title.textContent = "更新確認";
+  }
+
+  if (message) {
+    if (isLoading) {
+      message.innerHTML = '<span class="inline-spinner" aria-hidden="true"></span><span>最新リストを読み込んでいます…</span>';
+      message.classList.add("loading-message");
+    } else {
+      message.innerHTML = "他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。";
+      message.classList.remove("loading-message");
+    }
+  }
+
+  if (actions) {
+    actions.style.display = isLoading ? "none" : "flex";
+  }
+}
+
 function openConflictModal() {
   hideToast();
   resetPullRefreshVisual();
+  setConflictModalLoading(false);
   document.getElementById("conflictModal").classList.add("show");
 }
 
 function closeConflictModal() {
   document.getElementById("conflictModal").classList.remove("show");
+  setConflictModalLoading(false);
 }
 
-function loadLatestFromConflict() {
-  closeConflictModal();
+async function loadLatestFromConflict() {
   pendingConflictAction = null;
   resetModesAndSelections();
-  loadItems({ afterLoadMessage: "最新リストを読み込みました" });
+  setConflictModalLoading(true);
+
+  try {
+    await loadLatestItemsForConflictCancel();
+    closeConflictModal();
+    showToast("最新リストを読み込みました");
+  } catch (error) {
+    console.error(error);
+    closeConflictModal();
+    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+  }
 }
 
 function forcePendingConflictSave() {
@@ -2445,6 +2524,7 @@ document.addEventListener("click", event => {
 setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
+setupSwipeCloseGuards();
 loadItems();
 
 // ========================================
