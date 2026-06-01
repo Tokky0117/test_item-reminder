@@ -15,7 +15,7 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver1.0.3</div>
+      <div class="startup-version" id="startupVersion">ver1.0.4</div>
       <div class="startup-message" id="startupMessage"></div>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
@@ -39,7 +39,18 @@
           <h1 id="appTitle">日用品リスト</h1>
         </div>
 
-        <button class="add-top-button" onclick="openAddModal()" aria-label="日用品を追加">日用品を追加</button>
+        <button class="add-top-button icon-top-button" onclick="openAddModal()" aria-label="日用品を追加">
+          <svg class="top-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5V19"></path>
+            <path d="M5 12H19"></path>
+          </svg>
+        </button>
+        <button class="shopping-copy-button icon-top-button" id="shoppingCopyButton" onclick="copyShoppingList()" aria-label="購入リストをコピー">
+          <svg class="top-button-icon copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+            <path d="M5 16V7C5 5.9 5.9 5 7 5H16"></path>
+          </svg>
+        </button>
       </div>
 
       <div class="owner-tabs" id="ownerTabs" aria-label="使用者タブ"></div>
@@ -149,8 +160,8 @@
       <div class="confirm-message" id="updateRetryMessage">サーバーへの更新に失敗しました。
 画面上の変更はまだ保存されていません。</div>
       <div class="modal-actions retry-actions">
-        <button class="confirm-button" onclick="retryPendingUpdate()">再試行</button>
         <button class="cancel-button" onclick="cancelPendingUpdate()">更新をキャンセル</button>
+        <button class="confirm-button" onclick="retryPendingUpdate()">再試行</button>
       </div>
     </div>
   </div>
@@ -170,8 +181,9 @@
     <div class="modal">
       <h2>読み込み失敗</h2>
       <div class="confirm-message" id="loadFailureMessage">リストを読み込めませんでした。</div>
-      <div class="modal-actions">
-        <button class="confirm-button" onclick="closeLoadFailureModal()">OK</button>
+      <div class="modal-actions load-failure-actions">
+        <button class="cancel-button" onclick="returnToTitleFromLoadFailure()">タイトルに戻る</button>
+        <button class="confirm-button" onclick="retryLoadFromFailure()">再読み込み</button>
       </div>
     </div>
   </div>
