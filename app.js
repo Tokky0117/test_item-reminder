@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.2";
+const APP_VERSION = "1.0.3";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -796,9 +796,15 @@ function updateAppModeClasses() {
   const shoppingButton = document.querySelector(".shopping-button");
   const cancelButton = document.getElementById("shoppingCancelTopButton");
   const addButton = document.querySelector(".add-top-button");
+  const themeColorMeta = document.getElementById("themeColorMeta");
 
   app.classList.toggle("shopping-mode", shoppingMode);
   app.classList.toggle("reordering", isReordering);
+  document.body.classList.toggle("shopping-mode", shoppingMode);
+
+  if (themeColorMeta) {
+    themeColorMeta.setAttribute("content", shoppingMode ? "#fff7e8" : "#f5f5f5");
+  }
 
   if (shoppingButton) {
     shoppingButton.disabled = isModeSaving || isReordering;
