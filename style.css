@@ -25,6 +25,27 @@ button:focus {
   outline: none;
 }
 
+body,
+.app,
+.modal,
+.startup-screen,
+.category-heading-button,
+.owner-tab,
+.name-text,
+.note-text,
+.owner-mark {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+input,
+textarea {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+
 body {
   font-family: sans-serif;
   background: var(--bg-color);
@@ -115,6 +136,31 @@ body.shopping-mode {
   font-weight: bold;
   color: #777;
   line-height: 1.35;
+}
+
+.startup-start-button {
+  display: none;
+  min-width: 132px;
+  height: 44px;
+  margin-top: 8px;
+  border: none;
+  border-radius: 14px;
+  background: var(--primary-color);
+  color: white;
+  font-size: 16px;
+  font-weight: bold;
+  font-family: sans-serif;
+  box-shadow: 0 3px 10px rgba(0,0,0,0.12);
+}
+
+.startup-start-button.show {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.startup-start-button:active {
+  transform: scale(0.97);
 }
 
 .startup-toast {
@@ -279,6 +325,18 @@ h1,
   stroke-linecap: round;
   stroke-linejoin: round;
   fill: none;
+}
+
+.shopping-copy-button.copied .copy-icon {
+  display: none;
+}
+
+.shopping-copy-button.copied::before {
+  content: "✓";
+  font-size: 25px;
+  line-height: 1;
+  font-weight: bold;
+  color: #167a35;
 }
 
 .shopping-copy-button {
@@ -1326,7 +1384,9 @@ h1,
 }
 
 .retry-actions .cancel-button,
-.load-failure-actions .cancel-button {
+.load-failure-actions .cancel-button,
+.conflict-actions .cancel-button,
+.delete-actions .cancel-button {
   background: transparent;
   color: var(--primary-color);
 }
