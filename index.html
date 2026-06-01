@@ -12,7 +12,7 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver1.0.1</div>
+      <div class="startup-version" id="startupVersion">ver1.0.2</div>
       <div class="startup-message" id="startupMessage"></div>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
@@ -143,10 +143,11 @@
   <div class="modal-backdrop" id="updateRetryModal">
     <div class="modal">
       <h2>更新失敗</h2>
-      <div class="confirm-message">サーバーへの更新に失敗しました。<br>再試行しますか？</div>
-      <div class="modal-actions">
-        <button class="cancel-button" onclick="closeUpdateRetryModal()">閉じる</button>
+      <div class="confirm-message" id="updateRetryMessage">サーバーへの更新に失敗しました。
+画面上の変更はまだ保存されていません。</div>
+      <div class="modal-actions retry-actions">
         <button class="confirm-button" onclick="retryPendingUpdate()">再試行</button>
+        <button class="cancel-button" onclick="cancelPendingUpdate()">更新をキャンセル</button>
       </div>
     </div>
   </div>
@@ -154,10 +155,10 @@
   <div class="modal-backdrop" id="conflictModal">
     <div class="modal">
       <h2>更新確認</h2>
-      <div class="confirm-message">他の人がリストを更新しています。<br>どちらを反映しますか？</div>
+      <div class="confirm-message">他の端末でリストが更新されています。<br>この端末の内容で更新すると、他の端末の変更が上書きされる可能性があります。</div>
       <div class="modal-actions">
         <button class="cancel-button" onclick="loadLatestFromConflict()">最新を読み込む</button>
-        <button class="confirm-button" onclick="forcePendingConflictSave()">自分の変更で更新</button>
+        <button class="confirm-button" onclick="forcePendingConflictSave()">この端末の内容で上書き</button>
       </div>
     </div>
   </div>
