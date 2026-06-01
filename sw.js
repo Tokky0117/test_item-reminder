@@ -1,51 +1,193 @@
-const CACHE_NAME = "daily-reminder-v1.0.3";
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>日用品リスト</title>
+  <meta name="theme-color" id="themeColorMeta" content="#f5f5f5">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="startup-screen" id="startupScreen">
+    <div class="startup-card">
+      <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
+      <div class="startup-title" id="startupTitle">日用品リスト</div>
+      <div class="startup-version" id="startupVersion">ver1.0.4</div>
+      <div class="startup-message" id="startupMessage"></div>
+    </div>
+    <div class="startup-toast" id="startupToast">起動中…</div>
+  </div>
 
-const FILES_TO_CACHE = [
-  "./",
-  "./index.html",
-  "./style.css",
-  "./app.js",
-  "./manifest.json"
-];
+  <div class="app" id="app">
+    <div class="header">
+      <div class="title-row">
+        <button class="shopping-button" onclick="toggleShoppingMode()" aria-label="買い物リスト">
+          <span>買い物</span>
+          <svg class="shopping-switch-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M5 2.5L2.8 4.7L5 6.9"></path>
+            <path d="M2.9 4.7H10.8C12.1 4.7 13.1 5.7 13.1 7"></path>
+            <path d="M11 13.5L13.2 11.3L11 9.1"></path>
+            <path d="M13.1 11.3H5.2C3.9 11.3 2.9 10.3 2.9 9"></path>
+          </svg>
+        </button>
+        <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" onclick="openHomeCancelConfirm()" aria-label="買い物をキャンセル">キャンセル</button>
 
-self.addEventListener("install", event => {
-  self.skipWaiting();
+        <div class="title-center">
+          <h1 id="appTitle">日用品リスト</h1>
+        </div>
 
-  event.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      return cache.addAll(FILES_TO_CACHE);
-    })
-  );
-});
+        <button class="add-top-button icon-top-button" onclick="openAddModal()" aria-label="日用品を追加">
+          <svg class="top-button-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M12 5V19"></path>
+            <path d="M5 12H19"></path>
+          </svg>
+        </button>
+        <button class="shopping-copy-button icon-top-button" id="shoppingCopyButton" onclick="copyShoppingList()" aria-label="購入リストをコピー">
+          <svg class="top-button-icon copy-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
+            <path d="M5 16V7C5 5.9 5.9 5 7 5H16"></path>
+          </svg>
+        </button>
+      </div>
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys().then(keys => {
-      return Promise.all(
-        keys
-          .filter(key => key !== CACHE_NAME)
-          .map(key => caches.delete(key))
-      );
-    }).then(() => self.clients.claim())
-  );
-});
+      <div class="owner-tabs" id="ownerTabs" aria-label="使用者タブ"></div>
+    </div>
 
-self.addEventListener("fetch", event => {
-  if (event.request.method !== "GET") return;
+    <div id="items"></div>
 
-  event.respondWith(
-    fetch(event.request)
-      .then(response => {
-        const responseClone = response.clone();
+    <div class="footer">
+      <button class="purchase-complete-button" id="purchaseCompleteButton" onclick="openPurchaseConfirm()" aria-label="購入確定" disabled>購入確定</button>
+    </div>
+  </div>
 
-        caches.open(CACHE_NAME).then(cache => {
-          cache.put(event.request, responseClone);
-        });
+  <div class="toast" id="toast" onclick="hideToast()"></div>
 
-        return response;
-      })
-      .catch(() => {
-        return caches.match(event.request);
-      })
-  );
-});
+  <div class="modal-backdrop" id="itemModal">
+    <div class="modal item-page-modal">
+      <div class="item-page-header">
+        <div class="item-page-title-row">
+          <button class="item-page-cancel-button" onclick="closeItemModal()">キャンセル</button>
+          <div class="item-page-title-center">
+            <div class="item-page-title" id="itemModalTitle">日用品を追加</div>
+          </div>
+          <div class="item-page-header-spacer" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <div class="item-page-content">
+        <div class="item-page-form">
+          <div class="item-form-card">
+            <div class="field">
+              <label>日用品名</label>
+              <input id="modalName" type="text" placeholder="入力してください" oninput="validateItemModal()">
+            </div>
+
+            <div class="field">
+              <label>備考</label>
+              <input id="modalNote" type="text" placeholder="任意">
+            </div>
+
+            <div class="field">
+              <label>分類</label>
+              <div class="picker" id="categoryPicker">
+                <button class="picker-button" type="button" onclick="toggleCategoryPicker(event)">
+                  <span id="modalCategoryLabel">その他</span>
+                  <span class="picker-arrow" aria-hidden="true"></span>
+                </button>
+                <div class="picker-menu" id="categoryPickerMenu"></div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label>使用者</label>
+              <div class="picker" id="ownerPicker">
+                <button class="picker-button" type="button" onclick="toggleOwnerPicker(event)">
+                  <span id="modalOwnerLabel">共同</span>
+                  <span class="picker-arrow" aria-hidden="true"></span>
+                </button>
+                <div class="picker-menu" id="ownerPickerMenu"></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="item-page-bottom-actions">
+            <button class="item-page-save-bottom-button" id="modalConfirm" onclick="confirmItemModal()" disabled>決定</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="deleteConfirmModal">
+    <div class="modal">
+      <h2>削除確認</h2>
+      <div class="confirm-message" id="deleteConfirmMessage">この日用品を削除しますか？</div>
+      <div class="modal-actions">
+        <button class="cancel-button" onclick="closeDeleteConfirm()">いいえ</button>
+        <button class="confirm-button danger" onclick="confirmDeleteItem()">はい</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="purchaseConfirmModal">
+    <div class="modal">
+      <h2>購入確認</h2>
+      <div class="confirm-message">購入を完了しますか？</div>
+      <div class="modal-actions">
+        <button class="cancel-button" onclick="closePurchaseConfirm()">いいえ</button>
+        <button class="confirm-button shopping" onclick="confirmPurchaseComplete()">はい</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="homeCancelConfirmModal">
+    <div class="modal">
+      <h2>確認</h2>
+      <div class="confirm-message" id="homeCancelConfirmMessage">購入をキャンセルしますか？</div>
+      <div class="modal-actions">
+        <button class="cancel-button" onclick="closeHomeCancelConfirm()">いいえ</button>
+        <button class="confirm-button" onclick="confirmHomeCancel()">はい</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="updateRetryModal">
+    <div class="modal">
+      <h2>更新失敗</h2>
+      <div class="confirm-message" id="updateRetryMessage">サーバーへの更新に失敗しました。
+画面上の変更はまだ保存されていません。</div>
+      <div class="modal-actions retry-actions">
+        <button class="cancel-button" onclick="cancelPendingUpdate()">更新をキャンセル</button>
+        <button class="confirm-button" onclick="retryPendingUpdate()">再試行</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="conflictModal">
+    <div class="modal">
+      <h2>更新確認</h2>
+      <div class="confirm-message">他の端末でリストが更新されています。<br>この端末の内容で更新すると、他の端末の変更が上書きされる可能性があります。</div>
+      <div class="modal-actions">
+        <button class="cancel-button" onclick="loadLatestFromConflict()">最新を読み込む</button>
+        <button class="confirm-button" onclick="forcePendingConflictSave()">この端末の内容で上書き</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="loadFailureModal">
+    <div class="modal">
+      <h2>読み込み失敗</h2>
+      <div class="confirm-message" id="loadFailureMessage">リストを読み込めませんでした。</div>
+      <div class="modal-actions load-failure-actions">
+        <button class="cancel-button" onclick="returnToTitleFromLoadFailure()">タイトルに戻る</button>
+        <button class="confirm-button" onclick="retryLoadFromFailure()">再読み込み</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
