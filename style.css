@@ -32,6 +32,11 @@ body {
   height: 100vh;
   overflow: hidden;
   touch-action: manipulation;
+  transition: background 0.72s ease;
+}
+
+body.shopping-mode {
+  background: var(--shopping-bg-color);
 }
 
 .app {
@@ -140,7 +145,7 @@ body {
 .item-page-header {
   flex-shrink: 0;
   background: var(--bg-color);
-  padding: 10px 12px 7px;
+  padding: calc(10px + env(safe-area-inset-top)) 12px 7px;
   position: relative;
   transition: background 0.72s ease;
 }
@@ -884,8 +889,8 @@ h1,
   gap: 10px;
   align-items: center;
   padding: 8px 14px calc(14px + env(safe-area-inset-bottom));
-  background: rgba(245, 245, 245, 0.96);
-  box-shadow: 0 -4px 12px rgba(0,0,0,0.08);
+  background: var(--bg-color);
+  box-shadow: none;
   z-index: 50;
   transition: background 0.72s ease, box-shadow 0.24s ease;
 }
@@ -1281,10 +1286,16 @@ h1,
 }
 
 .retry-actions {
-  flex-direction: column;
+  flex-direction: row;
 }
 
 .retry-actions .cancel-button,
 .retry-actions .confirm-button {
-  width: 100%;
+  width: auto;
+  border-radius: 14px;
+}
+
+.retry-actions .cancel-button {
+  background: transparent;
+  color: var(--primary-color);
 }
