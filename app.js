@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.3";
+const APP_VERSION = "1.0.4";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -405,6 +405,7 @@ function updateActionButtons() {
   const purchaseCompleteButton = document.getElementById("purchaseCompleteButton");
   const cancelButton = document.getElementById("shoppingCancelTopButton");
   const addButton = document.querySelector(".add-top-button");
+  const copyButton = document.getElementById("shoppingCopyButton");
   const hasChanges = hasModeChanges();
 
   if (cancelButton) {
@@ -413,6 +414,10 @@ function updateActionButtons() {
 
   if (addButton) {
     addButton.disabled = isModeSaving || isReordering;
+  }
+
+  if (copyButton) {
+    copyButton.disabled = isModeSaving || isReordering;
   }
 
   if (purchaseCompleteButton) {
@@ -796,6 +801,7 @@ function updateAppModeClasses() {
   const shoppingButton = document.querySelector(".shopping-button");
   const cancelButton = document.getElementById("shoppingCancelTopButton");
   const addButton = document.querySelector(".add-top-button");
+  const copyButton = document.getElementById("shoppingCopyButton");
   const themeColorMeta = document.getElementById("themeColorMeta");
 
   app.classList.toggle("shopping-mode", shoppingMode);
@@ -816,6 +822,10 @@ function updateAppModeClasses() {
 
   if (addButton) {
     addButton.disabled = isModeSaving || isReordering;
+  }
+
+  if (copyButton) {
+    copyButton.disabled = isModeSaving || isReordering;
   }
 
   if (appTitle) {
@@ -1087,11 +1097,9 @@ function createItemRow(item) {
       <div class="swipe-actions">
         <button class="swipe-action-button delete" onclick="deleteSwipedItem(event, '${item.id}')" aria-label="日用品を削除">
           ${createTrashIcon("swipe-action-icon")}
-          <span>削除</span>
         </button>
         <button class="swipe-action-button edit" onclick="editSwipedItem(event, '${item.id}')" aria-label="日用品を編集">
           ${createPencilIcon("swipe-action-icon")}
-          <span>編集</span>
         </button>
       </div>
 
@@ -1776,6 +1784,104 @@ function toggleSpare(index) {
   }
 }
 
+
+function getShoppingCopyItems() {
+  return sortItemsByCategory(items.filter(item => !item.hasSpare));
+}
+
+function formatShoppingCopyDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${year}/${month}/${day} ${hour}:${minute}`;
+}
+
+function getOwnerSuffix(icon) {
+  const ownerName = getOwnerName(icon);
+  return ownerName === "共同" ? "" : `（${ownerName}）`;
+}
+
+function buildShoppingListText() {
+  const targetItems = getShoppingCopyItems();
+  const lines = ["買い物リスト", formatShoppingCopyDate(new Date()), ""];
+  let previousCategory = null;
+
+  targetItems.forEach(item => {
+    const category = item.category || "other";
+
+    if (category !== previousCategory) {
+      if (previousCategory !== null) {
+        lines.push("");
+      }
+
+      lines.push(`【${getCategoryName(category)}】`);
+      previousCategory = category;
+    }
+
+    lines.push(`・${item.name}${getOwnerSuffix(item.icon)}`);
+
+    if (item.note) {
+      lines.push(`  メモ：${item.note}`);
+    }
+  });
+
+  return lines.join("\n").trimEnd();
+}
+
+function copyTextFallback(text) {
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.focus();
+  textarea.select();
+
+  let success = false;
+
+  try {
+    success = document.execCommand("copy");
+  } catch (error) {
+    success = false;
+  }
+
+  document.body.removeChild(textarea);
+  return success;
+}
+
+async function copyShoppingList() {
+  if (isModeSaving || isReordering) return;
+
+  const targetItems = getShoppingCopyItems();
+
+  if (targetItems.length === 0) {
+    showToast("コピーする買い物リストがありません");
+    return;
+  }
+
+  const text = buildShoppingListText();
+
+  try {
+    if (navigator.clipboard && window.isSecureContext) {
+      await navigator.clipboard.writeText(text);
+    } else if (!copyTextFallback(text)) {
+      throw new Error("copy failed");
+    }
+
+    showToast("買い物リストをコピーしました");
+  } catch (error) {
+    if (copyTextFallback(text)) {
+      showToast("買い物リストをコピーしました");
+    } else {
+      showToast("コピーできませんでした");
+    }
+  }
+}
+
 function toggleShoppingMode() {
   if (isModeSaving || isReordering) return;
 
@@ -2227,6 +2333,37 @@ function openLoadFailureModal(message) {
 function closeLoadFailureModal() {
   isLoadFailureModalOpen = false;
   document.getElementById("loadFailureModal").classList.remove("show");
+}
+
+function showTitleScreen(message = "") {
+  isInitialLoading = true;
+  clearTimeout(startupToastTimer);
+
+  const screen = document.getElementById("startupScreen");
+  const startupMessage = document.getElementById("startupMessage");
+
+  setupStartupScreen();
+
+  if (startupMessage && message) {
+    startupMessage.textContent = message;
+  }
+
+  if (screen) {
+    screen.style.display = "flex";
+    screen.classList.remove("hide");
+    screen.classList.remove("show-toast");
+  }
+}
+
+function returnToTitleFromLoadFailure() {
+  closeLoadFailureModal();
+  resetModesAndSelections();
+  showTitleScreen("リストを読み込めませんでした");
+}
+
+function retryLoadFromFailure() {
+  closeLoadFailureModal();
+  loadItems();
 }
 
 document.addEventListener("click", event => {
