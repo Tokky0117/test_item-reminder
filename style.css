@@ -9,7 +9,7 @@
   --shopping-bg-color: #fff7e8;
   --shopping-header-color: #fff7e8;
   --shopping-accent-color: #a55a00;
-  --swipe-action-width: 124px;
+  --swipe-action-width: 112px;
 }
 
 * {
@@ -160,12 +160,12 @@ body.shopping-mode {
   align-items: center;
   justify-content: center;
   position: relative;
-  min-height: 34px;
+  min-height: 44px;
 }
 
 .title-center,
 .item-page-title-center {
-  max-width: calc(100vw - 230px);
+  max-width: calc(100vw - 170px);
   min-width: 0;
   text-align: center;
   border: none;
@@ -202,14 +202,16 @@ h1,
 .shopping-button,
 .shopping-cancel-top-button,
 .add-top-button,
+.shopping-copy-button,
 .item-page-cancel-button {
   position: absolute;
   top: 50%;
   border: none;
   font-weight: bold;
-  height: 34px;
-  border-radius: 10px;
-  padding: 0 8px;
+  min-width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  padding: 0 10px;
   transform: translateY(-50%);
   transition: background 0.18s ease, color 0.18s ease, opacity 0.18s ease, transform 0.08s ease;
   font-size: 14px;
@@ -243,6 +245,7 @@ h1,
 .shopping-button:active,
 .shopping-cancel-top-button:active,
 .add-top-button:active,
+.shopping-copy-button:active,
 .item-page-cancel-button:active {
   transform: translateY(-50%) scale(0.96);
 }
@@ -251,16 +254,41 @@ h1,
   display: none;
   left: 0;
   color: var(--primary-color);
+  min-width: 72px;
 }
 
-.add-top-button {
+.add-top-button,
+.shopping-copy-button {
   right: 0;
   color: var(--primary-color);
+}
+
+.icon-top-button {
+  width: 44px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.top-button-icon {
+  width: 24px;
+  height: 24px;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  fill: none;
+}
+
+.shopping-copy-button {
+  display: none;
 }
 
 .item-page-cancel-button {
   left: 0;
   color: var(--primary-color);
+  min-width: 72px;
 }
 
 .item-page-header-spacer {
@@ -268,13 +296,14 @@ h1,
   right: 0;
   top: 50%;
   width: 72px;
-  height: 34px;
+  height: 44px;
   transform: translateY(-50%);
 }
 
 .shopping-button:disabled,
 .shopping-cancel-top-button:disabled,
-.add-top-button:disabled {
+.add-top-button:disabled,
+.shopping-copy-button:disabled {
   opacity: 0.35;
 }
 
@@ -285,6 +314,10 @@ h1,
 
 .app.shopping-mode .shopping-cancel-top-button {
   display: block;
+}
+
+.app.shopping-mode .shopping-copy-button {
+  display: inline-flex;
 }
 
 .owner-tabs {
@@ -583,16 +616,13 @@ h1,
 }
 
 .swipe-action-button {
-  width: 56px;
+  width: 50px;
+  min-width: 50px;
   border: none;
   color: white;
-  font-size: 12px;
-  font-weight: bold;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 3px;
   padding: 0;
   border-radius: 13px;
   box-shadow: 0 2px 7px rgba(0,0,0,0.12);
@@ -608,8 +638,8 @@ h1,
 }
 
 .swipe-action-icon {
-  width: 18px;
-  height: 18px;
+  width: 22px;
+  height: 22px;
   stroke: currentColor;
   stroke-width: 2.2;
   stroke-linecap: round;
@@ -1295,7 +1325,8 @@ h1,
   border-radius: 14px;
 }
 
-.retry-actions .cancel-button {
+.retry-actions .cancel-button,
+.load-failure-actions .cancel-button {
   background: transparent;
   color: var(--primary-color);
 }
