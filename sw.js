@@ -1,8 +1,10 @@
-const CACHE_NAME = "test_daily-reminder-v1";
+const CACHE_NAME = "daily-reminder-v1.0.2";
 
 const FILES_TO_CACHE = [
   "./",
   "./index.html",
+  "./style.css",
+  "./app.js",
   "./manifest.json"
 ];
 
@@ -29,6 +31,8 @@ self.addEventListener("activate", event => {
 });
 
 self.addEventListener("fetch", event => {
+  if (event.request.method !== "GET") return;
+
   event.respondWith(
     fetch(event.request)
       .then(response => {
