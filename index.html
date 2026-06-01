@@ -15,8 +15,9 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver1.0.4</div>
+      <div class="startup-version" id="startupVersion">ver1.0.5</div>
       <div class="startup-message" id="startupMessage"></div>
+      <button class="startup-start-button" id="startupStartButton" onclick="startFromTitleScreen()">スタート</button>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
   </div>
@@ -47,8 +48,8 @@
         </button>
         <button class="shopping-copy-button icon-top-button" id="shoppingCopyButton" onclick="copyShoppingList()" aria-label="購入リストをコピー">
           <svg class="top-button-icon copy-icon" viewBox="0 0 24 24" aria-hidden="true">
-            <rect x="8" y="8" width="11" height="11" rx="2"></rect>
-            <path d="M5 16V7C5 5.9 5.9 5 7 5H16"></path>
+            <rect x="5.5" y="8.5" width="10.5" height="10.5" rx="2"></rect>
+            <path d="M9 5.5H17.5C18.6 5.5 19.5 6.4 19.5 7.5V16"></path>
           </svg>
         </button>
       </div>
@@ -125,9 +126,9 @@
     <div class="modal">
       <h2>削除確認</h2>
       <div class="confirm-message" id="deleteConfirmMessage">この日用品を削除しますか？</div>
-      <div class="modal-actions">
+      <div class="modal-actions delete-actions">
         <button class="cancel-button" onclick="closeDeleteConfirm()">いいえ</button>
-        <button class="confirm-button danger" onclick="confirmDeleteItem()">はい</button>
+        <button class="confirm-button danger" onclick="confirmDeleteItem()">削除</button>
       </div>
     </div>
   </div>
@@ -169,10 +170,10 @@
   <div class="modal-backdrop" id="conflictModal">
     <div class="modal">
       <h2>更新確認</h2>
-      <div class="confirm-message">他の端末でリストが更新されています。<br>この端末の内容で更新すると、他の端末の変更が上書きされる可能性があります。</div>
-      <div class="modal-actions">
-        <button class="cancel-button" onclick="loadLatestFromConflict()">最新を読み込む</button>
-        <button class="confirm-button" onclick="forcePendingConflictSave()">この端末の内容で上書き</button>
+      <div class="confirm-message">他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。</div>
+      <div class="modal-actions conflict-actions">
+        <button class="cancel-button" onclick="loadLatestFromConflict()">更新をキャンセル</button>
+        <button class="confirm-button" onclick="forcePendingConflictSave()">更新する</button>
       </div>
     </div>
   </div>
