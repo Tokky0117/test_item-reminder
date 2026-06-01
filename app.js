@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.4";
+const APP_VERSION = "1.0.5";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -48,6 +48,7 @@ const CATEGORY_LABELS = [
 let items = [];
 let toastTimer = null;
 let startupToastTimer = null;
+let copyButtonFeedbackTimer = null;
 let itemModalCloseTimer = null;
 let reorderHoldTimer = null;
 
@@ -124,11 +125,13 @@ function setupStartupScreen() {
   const title = document.getElementById("startupTitle");
   const version = document.getElementById("startupVersion");
   const message = document.getElementById("startupMessage");
+  const startButton = document.getElementById("startupStartButton");
 
   if (visual) visual.textContent = "🧺";
   if (title) title.textContent = "日用品リスト";
   if (version) version.textContent = "ver" + APP_VERSION;
   if (message) message.textContent = "";
+  if (startButton) startButton.classList.remove("show");
 }
 
 function startStartupToastTimer() {
@@ -213,6 +216,7 @@ function hasModeChanges() {
 
 function setOwnerTab(tabKey) {
   if (isModeSaving || isReordering) return;
+  if (closeSwipedItemIfOpen()) return;
   activeOwnerTab = tabKey;
   closeSwipedItemWithoutRender();
   render();
@@ -384,6 +388,7 @@ function getNextCategoryOrder(category) {
 
 function toggleCategoryCollapse(category) {
   if (isModeSaving || isReordering) return;
+  if (closeSwipedItemIfOpen()) return;
 
   const key = category || "other";
 
@@ -417,7 +422,7 @@ function updateActionButtons() {
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering;
+    copyButton.disabled = isModeSaving || isReordering || getShoppingCopyItems().length === 0;
   }
 
   if (purchaseCompleteButton) {
@@ -825,7 +830,7 @@ function updateAppModeClasses() {
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering;
+    copyButton.disabled = isModeSaving || isReordering || getShoppingCopyItems().length === 0;
   }
 
   if (appTitle) {
@@ -1747,6 +1752,12 @@ function closeSwipedItem() {
   render();
 }
 
+function closeSwipedItemIfOpen() {
+  if (!swipedItemId) return false;
+  closeSwipedItem();
+  return true;
+}
+
 function closeSwipedItemWithoutRender() {
   swipedItemId = null;
 }
@@ -1771,6 +1782,12 @@ function deleteSwipedItem(event, id) {
 
 function toggleSpare(index) {
   if (isModeSaving || isReordering) return;
+
+  if (swipedItemId) {
+    closeSwipedItem();
+    return;
+  }
+
   if (index < 0 || !items[index]) return;
 
   closeSwipedItemWithoutRender();
@@ -1853,6 +1870,18 @@ function copyTextFallback(text) {
   return success;
 }
 
+function showCopyButtonDone() {
+  const button = document.getElementById("shoppingCopyButton");
+  if (!button) return;
+
+  button.classList.add("copied");
+  clearTimeout(copyButtonFeedbackTimer);
+
+  copyButtonFeedbackTimer = setTimeout(() => {
+    button.classList.remove("copied");
+  }, 1200);
+}
+
 async function copyShoppingList() {
   if (isModeSaving || isReordering) return;
 
@@ -1872,9 +1901,11 @@ async function copyShoppingList() {
       throw new Error("copy failed");
     }
 
+    showCopyButtonDone();
     showToast("買い物リストをコピーしました");
   } catch (error) {
     if (copyTextFallback(text)) {
+      showCopyButtonDone();
       showToast("買い物リストをコピーしました");
     } else {
       showToast("コピーできませんでした");
@@ -1884,6 +1915,7 @@ async function copyShoppingList() {
 
 function toggleShoppingMode() {
   if (isModeSaving || isReordering) return;
+  if (closeSwipedItemIfOpen()) return;
 
   closeSwipedItemWithoutRender();
 
@@ -1917,6 +1949,7 @@ function openItemModalWithPageTransition() {
 
 function openAddModal() {
   if (shoppingMode || isModeSaving || isReordering) return;
+  if (closeSwipedItemIfOpen()) return;
 
   closeSwipedItemWithoutRender();
 
@@ -2335,17 +2368,24 @@ function closeLoadFailureModal() {
   document.getElementById("loadFailureModal").classList.remove("show");
 }
 
-function showTitleScreen(message = "") {
+function showTitleScreen(options = {}) {
+  const showStartButton = options.showStartButton === true;
+
   isInitialLoading = true;
   clearTimeout(startupToastTimer);
 
   const screen = document.getElementById("startupScreen");
   const startupMessage = document.getElementById("startupMessage");
+  const startButton = document.getElementById("startupStartButton");
 
   setupStartupScreen();
 
-  if (startupMessage && message) {
-    startupMessage.textContent = message;
+  if (startupMessage) {
+    startupMessage.textContent = "";
+  }
+
+  if (startButton) {
+    startButton.classList.toggle("show", showStartButton);
   }
 
   if (screen) {
@@ -2358,7 +2398,17 @@ function showTitleScreen(message = "") {
 function returnToTitleFromLoadFailure() {
   closeLoadFailureModal();
   resetModesAndSelections();
-  showTitleScreen("リストを読み込めませんでした");
+  showTitleScreen({ showStartButton: true });
+}
+
+function startFromTitleScreen() {
+  const startButton = document.getElementById("startupStartButton");
+  if (startButton) {
+    startButton.classList.remove("show");
+  }
+
+  startStartupToastTimer();
+  loadItems();
 }
 
 function retryLoadFromFailure() {
@@ -2387,7 +2437,7 @@ document.addEventListener("click", event => {
 
   hideToast();
 
-  if (swipedItemId && !event.target.closest(".swipe-frame")) {
+  if (swipedItemId && !event.target.closest(".swipe-action-button")) {
     closeSwipedItem();
   }
 });
