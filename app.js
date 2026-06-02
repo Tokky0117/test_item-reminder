@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.17";
+const APP_VERSION = "1.0.13";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -119,211 +119,78 @@ let isPulling = false;
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
 
-let safeActionTouch = null;
+const guardedButtonTouches = new WeakMap();
 
 
 // ========================================
 // 共通タッチ判定
 // ========================================
-function getActionElementFromEvent(event) {
+function getGuardedButtonFromEvent(event) {
   if (!event || !event.target || typeof event.target.closest !== "function") return null;
-  return event.target.closest("[data-action]");
+  return event.target.closest("button");
 }
 
-function isActionElementDisabled(element) {
-  if (!element) return true;
-  if (element.disabled) return true;
-  if (element.getAttribute("aria-disabled") === "true") return true;
-  return false;
-}
-
-function isTouchInsideElement(touch, element) {
-  if (!touch || !element) return false;
-  const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
-  return !!(endElement && element.contains(endElement));
-}
-
-function getActionEventProxy(event) {
-  return {
-    originalEvent: event,
-    preventDefault() {
-      if (event && typeof event.preventDefault === "function" && event.cancelable) {
-        event.preventDefault();
-      }
-    },
-    stopPropagation() {
-      if (event && typeof event.stopPropagation === "function") {
-        event.stopPropagation();
-      }
-    },
-    stopImmediatePropagation() {
-      if (event && typeof event.stopImmediatePropagation === "function") {
-        event.stopImmediatePropagation();
-      }
-    }
-  };
-}
-
-function executeSafeAction(element, event) {
-  if (!element || isActionElementDisabled(element)) return;
-
-  const action = element.dataset.action;
-  const safeEvent = getActionEventProxy(event);
-
-  switch (action) {
-    case "start-title":
-      startFromTitleScreen();
-      break;
-    case "toggle-shopping":
-      toggleShoppingMode();
-      break;
-    case "open-home-cancel":
-      openHomeCancelConfirm();
-      break;
-    case "open-add":
-      openAddModal();
-      break;
-    case "copy-shopping":
-      copyShoppingList(safeEvent);
-      break;
-    case "open-purchase-confirm":
-      openPurchaseConfirm();
-      break;
-    case "hide-toast":
-      hideToast();
-      break;
-    case "close-item-modal":
-      closeItemModal();
-      break;
-    case "toggle-category-picker":
-      toggleCategoryPicker(safeEvent);
-      break;
-    case "toggle-owner-picker":
-      toggleOwnerPicker(safeEvent);
-      break;
-    case "confirm-item-modal":
-      confirmItemModal();
-      break;
-    case "close-delete-confirm":
-      closeDeleteConfirm();
-      break;
-    case "confirm-delete-item":
-      confirmDeleteItem();
-      break;
-    case "close-purchase-confirm":
-      closePurchaseConfirm();
-      break;
-    case "confirm-purchase-complete":
-      confirmPurchaseComplete();
-      break;
-    case "close-home-cancel-confirm":
-      closeHomeCancelConfirm();
-      break;
-    case "confirm-home-cancel":
-      confirmHomeCancel();
-      break;
-    case "cancel-pending-update":
-      cancelPendingUpdate();
-      break;
-    case "retry-pending-update":
-      retryPendingUpdate();
-      break;
-    case "load-latest-conflict":
-      loadLatestFromConflict();
-      break;
-    case "force-pending-conflict":
-      forcePendingConflictSave();
-      break;
-    case "return-title-load-failure":
-      returnToTitleFromLoadFailure();
-      break;
-    case "retry-load-failure":
-      retryLoadFromFailure();
-      break;
-    case "set-owner-tab":
-      setOwnerTab(element.dataset.owner || "all");
-      break;
-    case "toggle-category-collapse":
-      toggleCategoryCollapse(element.dataset.category || "other");
-      break;
-    case "edit-swiped-item":
-      editSwipedItem(safeEvent, element.dataset.itemId);
-      break;
-    case "delete-swiped-item":
-      deleteSwipedItem(safeEvent, element.dataset.itemId);
-      break;
-    case "toggle-spare":
-      toggleSpare(Number(element.dataset.index));
-      break;
-    case "select-category":
-      safeEvent.stopPropagation();
-      setModalCategory(element.dataset.category || "other");
-      break;
-    case "select-owner":
-      safeEvent.stopPropagation();
-      setModalIcon(element.dataset.owner || "共");
-      break;
-    default:
-      break;
-  }
-}
-
-function setupSafeActionHandlers() {
+function setupButtonTapGuard() {
   document.addEventListener("touchstart", event => {
-    const element = getActionElementFromEvent(event);
-    if (!element || isActionElementDisabled(element)) {
-      safeActionTouch = null;
-      return;
-    }
-    if (!event.touches || event.touches.length !== 1) {
-      safeActionTouch = null;
-      return;
-    }
+    const button = getGuardedButtonFromEvent(event);
+    if (!button || button.disabled) return;
+    if (!event.touches || event.touches.length !== 1) return;
 
     const touch = event.touches[0];
-    safeActionTouch = {
-      element: element,
+    guardedButtonTouches.set(button, {
       startX: touch.clientX,
       startY: touch.clientY,
       moved: false
-    };
+    });
   }, { passive: true, capture: true });
 
   document.addEventListener("touchmove", event => {
-    if (!safeActionTouch || !event.touches || event.touches.length !== 1) return;
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
+
+    const guard = guardedButtonTouches.get(button);
+    if (!guard || !event.touches || event.touches.length !== 1) return;
 
     const touch = event.touches[0];
-    const dx = Math.abs(touch.clientX - safeActionTouch.startX);
-    const dy = Math.abs(touch.clientY - safeActionTouch.startY);
+    const dx = Math.abs(touch.clientX - guard.startX);
+    const dy = Math.abs(touch.clientY - guard.startY);
 
     if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) {
-      safeActionTouch.moved = true;
+      guard.moved = true;
     }
   }, { passive: true, capture: true });
 
   document.addEventListener("touchend", event => {
-    if (!safeActionTouch) return;
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
 
-    const state = safeActionTouch;
-    safeActionTouch = null;
-
-    if (!event.changedTouches || event.changedTouches.length !== 1) return;
-
-    const touch = event.changedTouches[0];
-    const dx = Math.abs(touch.clientX - state.startX);
-    const dy = Math.abs(touch.clientY - state.startY);
-
-    if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) return;
-    if (state.moved) return;
-    if (!isTouchInsideElement(touch, state.element)) return;
-    if (isActionElementDisabled(state.element)) return;
-
-    executeSafeAction(state.element, event);
-  }, { passive: false });
-
-  document.addEventListener("touchcancel", () => {
-    safeActionTouch = null;
+    // iOSではtouchend後にclickが発火するため、すぐには消さない。
+    // clickが来ない場合も、次回操作に持ち越さないよう少し後で消す。
+    setTimeout(() => {
+      guardedButtonTouches.delete(button);
+    }, 700);
   }, { passive: true, capture: true });
+
+  document.addEventListener("touchcancel", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (button) guardedButtonTouches.delete(button);
+  }, { passive: true, capture: true });
+
+  document.addEventListener("click", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
+
+    const guard = guardedButtonTouches.get(button);
+    if (!guard) return;
+
+    guardedButtonTouches.delete(button);
+
+    if (!guard.moved) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }, true);
 }
 
 // ========================================
@@ -470,8 +337,7 @@ function renderOwnerTabs() {
     button.textContent = isActive ? tab.full : tab.short;
     button.setAttribute("aria-label", tab.full);
     button.disabled = isModeSaving || isReordering;
-    button.dataset.action = "set-owner-tab";
-    button.dataset.owner = tab.key;
+    button.onclick = () => setOwnerTab(tab.key);
 
     tabContainer.appendChild(button);
   });
@@ -1289,8 +1155,7 @@ function createCategoryHeading(category) {
     <button
       class="category-heading-button"
       type="button"
-      data-action="toggle-category-collapse"
-      data-category="${category || "other"}"
+      onclick="toggleCategoryCollapse('${category || "other"}')"
       aria-label="${getCategoryName(category || "other")}の表示切り替え"
     >
       <span>${getCategoryName(category || "other")}</span>
@@ -1346,12 +1211,13 @@ function createItemRow(item) {
       ontouchmove="moveItemTouch(event)"
       ontouchend="endItemTouch(event, '${item.id}')"
       ontouchcancel="cancelItemTouch()"
+      onclick="handleItemTap(event, '${item.id}')"
     >
       <div class="swipe-actions">
-        <button class="swipe-action-button delete" data-action="delete-swiped-item" data-item-id="${item.id}" aria-label="日用品を削除">
+        <button class="swipe-action-button delete" onclick="deleteSwipedItem(event, '${item.id}')" aria-label="日用品を削除">
           ${createTrashIcon("swipe-action-icon")}
         </button>
-        <button class="swipe-action-button edit" data-action="edit-swiped-item" data-item-id="${item.id}" aria-label="日用品を編集">
+        <button class="swipe-action-button edit" onclick="editSwipedItem(event, '${item.id}')" aria-label="日用品を編集">
           ${createPencilIcon("swipe-action-icon")}
         </button>
       </div>
@@ -1405,8 +1271,7 @@ function createShoppingCheckHtml(item, index) {
       class="shopping-check-button ${checked ? "checked" : "unchecked"}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      data-action="toggle-spare"
-      data-index="${index}"
+      onclick="event.stopPropagation(); toggleSpare(${index})"
       aria-label="${checked ? "購入済み" : "未購入"}"
     >
       <span class="shopping-checkbox" aria-hidden="true">
@@ -1428,8 +1293,7 @@ function createStockToggleHtml(item, index) {
       class="spare-badge ${className}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      data-action="toggle-spare"
-      data-index="${index}"
+      onclick="event.stopPropagation(); toggleSpare(${index})"
       aria-label="${label}"
     >
       <span class="stock-toggle-track">
@@ -2367,8 +2231,10 @@ function renderCategoryPicker() {
       <span>${category.name}</span>
       ${modalCategory === category.key ? createCheckSvg() : ""}
     `;
-    button.dataset.action = "select-category";
-    button.dataset.category = category.key;
+    button.onclick = event => {
+      event.stopPropagation();
+      setModalCategory(category.key);
+    };
 
     menu.appendChild(button);
   });
@@ -2394,8 +2260,10 @@ function renderOwnerPicker() {
       <span>${owner.name}</span>
       ${modalIcon === owner.key ? createCheckSvg() : ""}
     `;
-    button.dataset.action = "select-owner";
-    button.dataset.owner = owner.key;
+    button.onclick = event => {
+      event.stopPropagation();
+      setModalIcon(owner.key);
+    };
 
     menu.appendChild(button);
   });
@@ -2752,7 +2620,6 @@ document.addEventListener("click", event => {
   if (event.target.closest("#loadFailureModal")) return;
 
   if (event.target.closest("#toast")) return;
-  if (event.target.closest("[data-action]")) return;
 
   hideToast();
 
@@ -2761,7 +2628,7 @@ document.addEventListener("click", event => {
   }
 });
 
-setupSafeActionHandlers();
+setupButtonTapGuard();
 setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
