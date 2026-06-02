@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.12";
+const APP_VERSION = "1.0.14";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -119,41 +119,196 @@ let isPulling = false;
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
 
-const guardedButtonTouches = new WeakMap();
+const safeActionTouches = new WeakMap();
+const safeActionClickSuppressions = new WeakMap();
+let activeSafeActionElement = null;
 
 
 // ========================================
 // 共通タッチ判定
 // ========================================
-function getGuardedButtonFromEvent(event) {
+function getSafeActionElementFromEvent(event) {
   if (!event || !event.target || typeof event.target.closest !== "function") return null;
-  return event.target.closest("button");
+  return event.target.closest("[data-action]");
 }
 
-function setupButtonTapGuard() {
+function isSafeActionDisabled(element) {
+  if (!element) return true;
+  if (element.disabled) return true;
+  if (element.getAttribute("aria-disabled") === "true") return true;
+  return false;
+}
+
+function getTouchByIdentifier(touchList, identifier) {
+  if (!touchList) return null;
+
+  for (let i = 0; i < touchList.length; i += 1) {
+    if (touchList[i].identifier === identifier) {
+      return touchList[i];
+    }
+  }
+
+  return null;
+}
+
+function markSafeActionClickSuppressed(element) {
+  if (!element) return;
+  safeActionClickSuppressions.set(element, Date.now() + 800);
+}
+
+function shouldSuppressSafeActionClick(element) {
+  if (!element) return false;
+
+  const until = safeActionClickSuppressions.get(element);
+  if (!until) return false;
+
+  if (Date.now() <= until) {
+    safeActionClickSuppressions.delete(element);
+    return true;
+  }
+
+  safeActionClickSuppressions.delete(element);
+  return false;
+}
+
+function shouldPassLongPressToCard(element, guard) {
+  if (!element || !guard) return false;
+  if (element.dataset.cardGesture !== "true") return false;
+  return Date.now() - guard.startedAt >= REORDER_HOLD_MS;
+}
+
+function executeSafeAction(element, event) {
+  if (!element || isSafeActionDisabled(element)) return;
+
+  const action = element.dataset.action;
+  if (!action) return;
+
+  switch (action) {
+    case "start":
+      startFromTitleScreen();
+      break;
+    case "toggle-shopping":
+      toggleShoppingMode();
+      break;
+    case "open-home-cancel":
+      openHomeCancelConfirm();
+      break;
+    case "open-add":
+      openAddModal();
+      break;
+    case "copy-shopping":
+      copyShoppingList(event);
+      break;
+    case "open-purchase-confirm":
+      openPurchaseConfirm();
+      break;
+    case "hide-toast":
+      hideToast();
+      break;
+    case "close-item-modal":
+      closeItemModal();
+      break;
+    case "toggle-category-picker":
+      toggleCategoryPicker(event);
+      break;
+    case "toggle-owner-picker":
+      toggleOwnerPicker(event);
+      break;
+    case "confirm-item-modal":
+      confirmItemModal();
+      break;
+    case "close-delete-confirm":
+      closeDeleteConfirm();
+      break;
+    case "confirm-delete-item":
+      confirmDeleteItem();
+      break;
+    case "close-purchase-confirm":
+      closePurchaseConfirm();
+      break;
+    case "confirm-purchase-complete":
+      confirmPurchaseComplete();
+      break;
+    case "close-home-cancel":
+      closeHomeCancelConfirm();
+      break;
+    case "confirm-home-cancel":
+      confirmHomeCancel();
+      break;
+    case "cancel-pending-update":
+      cancelPendingUpdate();
+      break;
+    case "retry-pending-update":
+      retryPendingUpdate();
+      break;
+    case "load-latest-from-conflict":
+      loadLatestFromConflict();
+      break;
+    case "force-pending-conflict-save":
+      forcePendingConflictSave();
+      break;
+    case "return-to-title":
+      returnToTitleFromLoadFailure();
+      break;
+    case "retry-load":
+      retryLoadFromFailure();
+      break;
+    case "set-owner-tab":
+      setOwnerTab(element.dataset.ownerTab || "all");
+      break;
+    case "toggle-category-collapse":
+      toggleCategoryCollapse(element.dataset.category || "other");
+      break;
+    case "edit-swiped-item":
+      editSwipedItem(event, element.dataset.itemId || "");
+      break;
+    case "delete-swiped-item":
+      deleteSwipedItem(event, element.dataset.itemId || "");
+      break;
+    case "toggle-spare": {
+      clearTimeout(reorderHoldTimer);
+      cancelItemTouch();
+      toggleSpare(Number(element.dataset.index));
+      break;
+    }
+    case "set-modal-category":
+      setModalCategory(element.dataset.category || "other");
+      break;
+    case "set-modal-owner":
+      setModalIcon(element.dataset.owner || "共");
+      break;
+    default:
+      break;
+  }
+}
+
+function setupSafeActionHandlers() {
   document.addEventListener("touchstart", event => {
-    const button = getGuardedButtonFromEvent(event);
-    if (!button || button.disabled) return;
+    const element = getSafeActionElementFromEvent(event);
+    if (!element || isSafeActionDisabled(element)) return;
     if (!event.touches || event.touches.length !== 1) return;
 
     const touch = event.touches[0];
-    guardedButtonTouches.set(button, {
+    activeSafeActionElement = element;
+    safeActionTouches.set(element, {
+      identifier: touch.identifier,
       startX: touch.clientX,
       startY: touch.clientY,
       moved: false,
-      endedInside: true,
-      ended: false
+      startedAt: Date.now()
     });
   }, { passive: true, capture: true });
 
   document.addEventListener("touchmove", event => {
-    const button = getGuardedButtonFromEvent(event);
-    if (!button) return;
+    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
+    if (!element) return;
 
-    const guard = guardedButtonTouches.get(button);
-    if (!guard || !event.touches || event.touches.length !== 1) return;
+    const guard = safeActionTouches.get(element);
+    if (!guard) return;
 
-    const touch = event.touches[0];
+    const touch = getTouchByIdentifier(event.touches, guard.identifier);
+    if (!touch) return;
+
     const dx = Math.abs(touch.clientX - guard.startX);
     const dy = Math.abs(touch.clientY - guard.startY);
 
@@ -163,51 +318,80 @@ function setupButtonTapGuard() {
   }, { passive: true, capture: true });
 
   document.addEventListener("touchend", event => {
-    const button = getGuardedButtonFromEvent(event);
-    if (!button) return;
+    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
+    if (!element) return;
 
-    const guard = guardedButtonTouches.get(button);
-    const touch = event.changedTouches && event.changedTouches[0];
+    const guard = safeActionTouches.get(element);
+    if (!guard) return;
 
-    if (guard && touch) {
-      const dx = Math.abs(touch.clientX - guard.startX);
-      const dy = Math.abs(touch.clientY - guard.startY);
-      const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    const touch = getTouchByIdentifier(event.changedTouches, guard.identifier);
+    if (!touch) return;
 
-      guard.ended = true;
-      guard.endedInside = !!(endElement && button.contains(endElement));
+    safeActionTouches.delete(element);
+    activeSafeActionElement = null;
 
-      if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE || !guard.endedInside) {
-        guard.moved = true;
-      }
+    const dx = Math.abs(touch.clientX - guard.startX);
+    const dy = Math.abs(touch.clientY - guard.startY);
+    const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
+    const endedInside = !!(endElement && element.contains(endElement));
+    const moved = guard.moved || dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE;
+
+    // 在庫トグルの長押しはカード側の並び替えに渡す。
+    if (shouldPassLongPressToCard(element, guard)) {
+      markSafeActionClickSuppressed(element);
+      return;
     }
 
-    // iOSではtouchend後にclickが発火するため、すぐには消さない。
-    // clickが来ない場合も、次回操作に持ち越さないよう少し後で消す。
-    setTimeout(() => {
-      guardedButtonTouches.delete(button);
-    }, 700);
-  }, { passive: true, capture: true });
+    if (moved || !endedInside || isSafeActionDisabled(element)) {
+      markSafeActionClickSuppressed(element);
+
+      if (element.dataset.cardGesture !== "true") {
+        event.preventDefault();
+        event.stopPropagation();
+        event.stopImmediatePropagation();
+      }
+
+      return;
+    }
+
+    markSafeActionClickSuppressed(element);
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    executeSafeAction(element, event);
+  }, { passive: false, capture: true });
 
   document.addEventListener("touchcancel", event => {
-    const button = getGuardedButtonFromEvent(event);
-    if (button) guardedButtonTouches.delete(button);
+    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
+    if (element) {
+      safeActionTouches.delete(element);
+      markSafeActionClickSuppressed(element);
+    }
+    activeSafeActionElement = null;
   }, { passive: true, capture: true });
 
   document.addEventListener("click", event => {
-    const button = getGuardedButtonFromEvent(event);
-    if (!button) return;
+    const element = getSafeActionElementFromEvent(event);
+    if (!element) return;
 
-    const guard = guardedButtonTouches.get(button);
-    if (!guard) return;
+    if (shouldSuppressSafeActionClick(element)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return;
+    }
 
-    guardedButtonTouches.delete(button);
-
-    if (!guard.moved && guard.endedInside !== false) return;
+    if (isSafeActionDisabled(element)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return;
+    }
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+    executeSafeAction(element, event);
   }, true);
 }
 
@@ -355,7 +539,8 @@ function renderOwnerTabs() {
     button.textContent = isActive ? tab.full : tab.short;
     button.setAttribute("aria-label", tab.full);
     button.disabled = isModeSaving || isReordering;
-    button.onclick = () => setOwnerTab(tab.key);
+    button.dataset.action = "set-owner-tab";
+    button.dataset.ownerTab = tab.key;
 
     tabContainer.appendChild(button);
   });
@@ -1173,7 +1358,8 @@ function createCategoryHeading(category) {
     <button
       class="category-heading-button"
       type="button"
-      onclick="toggleCategoryCollapse('${category || "other"}')"
+      data-action="toggle-category-collapse"
+      data-category="${category || "other"}"
       aria-label="${getCategoryName(category || "other")}の表示切り替え"
     >
       <span>${getCategoryName(category || "other")}</span>
@@ -1232,10 +1418,10 @@ function createItemRow(item) {
       onclick="handleItemTap(event, '${item.id}')"
     >
       <div class="swipe-actions">
-        <button class="swipe-action-button delete" onclick="deleteSwipedItem(event, '${item.id}')" aria-label="日用品を削除">
+        <button class="swipe-action-button delete" data-action="delete-swiped-item" data-item-id="${item.id}" aria-label="日用品を削除">
           ${createTrashIcon("swipe-action-icon")}
         </button>
-        <button class="swipe-action-button edit" onclick="editSwipedItem(event, '${item.id}')" aria-label="日用品を編集">
+        <button class="swipe-action-button edit" data-action="edit-swiped-item" data-item-id="${item.id}" aria-label="日用品を編集">
           ${createPencilIcon("swipe-action-icon")}
         </button>
       </div>
@@ -1289,7 +1475,8 @@ function createShoppingCheckHtml(item, index) {
       class="shopping-check-button ${checked ? "checked" : "unchecked"}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      onclick="event.stopPropagation(); toggleSpare(${index})"
+      data-action="toggle-spare"
+      data-index="${index}"
       aria-label="${checked ? "購入済み" : "未購入"}"
     >
       <span class="shopping-checkbox" aria-hidden="true">
@@ -1311,7 +1498,9 @@ function createStockToggleHtml(item, index) {
       class="spare-badge ${className}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      onclick="event.stopPropagation(); toggleSpare(${index})"
+      data-action="toggle-spare"
+      data-index="${index}"
+      data-card-gesture="true"
       aria-label="${label}"
     >
       <span class="stock-toggle-track">
@@ -1927,7 +2116,7 @@ function closeSwipedItemWithoutRender() {
 }
 
 function editSwipedItem(event, id) {
-  event.stopPropagation();
+  if (event) event.stopPropagation();
   if (isReordering) return;
 
   closeSwipedItemWithoutRender();
@@ -1936,7 +2125,7 @@ function editSwipedItem(event, id) {
 }
 
 function deleteSwipedItem(event, id) {
-  event.stopPropagation();
+  if (event) event.stopPropagation();
   if (isReordering) return;
 
   closeSwipedItemWithoutRender();
@@ -2249,10 +2438,8 @@ function renderCategoryPicker() {
       <span>${category.name}</span>
       ${modalCategory === category.key ? createCheckSvg() : ""}
     `;
-    button.onclick = event => {
-      event.stopPropagation();
-      setModalCategory(category.key);
-    };
+    button.dataset.action = "set-modal-category";
+    button.dataset.category = category.key;
 
     menu.appendChild(button);
   });
@@ -2278,10 +2465,8 @@ function renderOwnerPicker() {
       <span>${owner.name}</span>
       ${modalIcon === owner.key ? createCheckSvg() : ""}
     `;
-    button.onclick = event => {
-      event.stopPropagation();
-      setModalIcon(owner.key);
-    };
+    button.dataset.action = "set-modal-owner";
+    button.dataset.owner = owner.key;
 
     menu.appendChild(button);
   });
@@ -2646,7 +2831,7 @@ document.addEventListener("click", event => {
   }
 });
 
-setupButtonTapGuard();
+setupSafeActionHandlers();
 setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
