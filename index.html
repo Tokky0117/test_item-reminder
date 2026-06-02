@@ -15,9 +15,9 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver1.0.15</div>
+      <div class="startup-version" id="startupVersion">ver1.0.16</div>
       <div class="startup-message" id="startupMessage"></div>
-      <button class="startup-start-button" id="startupStartButton" data-action="start">スタート</button>
+      <button class="startup-start-button" id="startupStartButton" data-action="start-title">スタート</button>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
   </div>
@@ -152,7 +152,7 @@
       <h2>確認</h2>
       <div class="confirm-message" id="homeCancelConfirmMessage">購入をキャンセルしますか？</div>
       <div class="modal-actions">
-        <button class="cancel-button" data-action="close-home-cancel">いいえ</button>
+        <button class="cancel-button" data-action="close-home-cancel-confirm">いいえ</button>
         <button class="confirm-button" data-action="confirm-home-cancel">はい</button>
       </div>
     </div>
@@ -175,8 +175,8 @@
       <h2 id="conflictTitle">更新確認</h2>
       <div class="confirm-message" id="conflictMessage">他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。</div>
       <div class="modal-actions conflict-actions" id="conflictActions">
-        <button class="cancel-button" data-action="load-latest-from-conflict">更新をキャンセル</button>
-        <button class="confirm-button" data-action="force-pending-conflict-save">更新する</button>
+        <button class="cancel-button" data-action="load-latest-conflict">更新をキャンセル</button>
+        <button class="confirm-button" data-action="force-pending-conflict">更新する</button>
       </div>
     </div>
   </div>
@@ -186,8 +186,8 @@
       <h2>読み込み失敗</h2>
       <div class="confirm-message" id="loadFailureMessage">リストを読み込めませんでした。</div>
       <div class="modal-actions load-failure-actions">
-        <button class="cancel-button" data-action="return-to-title">タイトルに戻る</button>
-        <button class="confirm-button" data-action="retry-load">再読み込み</button>
+        <button class="cancel-button" data-action="return-title-load-failure">タイトルに戻る</button>
+        <button class="confirm-button" data-action="retry-load-failure">再読み込み</button>
       </div>
     </div>
   </div>
