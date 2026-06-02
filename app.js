@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.11";
+const APP_VERSION = "1.0.12";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -140,7 +140,9 @@ function setupButtonTapGuard() {
     guardedButtonTouches.set(button, {
       startX: touch.clientX,
       startY: touch.clientY,
-      moved: false
+      moved: false,
+      endedInside: true,
+      ended: false
     });
   }, { passive: true, capture: true });
 
@@ -164,6 +166,22 @@ function setupButtonTapGuard() {
     const button = getGuardedButtonFromEvent(event);
     if (!button) return;
 
+    const guard = guardedButtonTouches.get(button);
+    const touch = event.changedTouches && event.changedTouches[0];
+
+    if (guard && touch) {
+      const dx = Math.abs(touch.clientX - guard.startX);
+      const dy = Math.abs(touch.clientY - guard.startY);
+      const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
+
+      guard.ended = true;
+      guard.endedInside = !!(endElement && button.contains(endElement));
+
+      if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE || !guard.endedInside) {
+        guard.moved = true;
+      }
+    }
+
     // iOSではtouchend後にclickが発火するため、すぐには消さない。
     // clickが来ない場合も、次回操作に持ち越さないよう少し後で消す。
     setTimeout(() => {
@@ -185,7 +203,7 @@ function setupButtonTapGuard() {
 
     guardedButtonTouches.delete(button);
 
-    if (!guard.moved) return;
+    if (!guard.moved && guard.endedInside !== false) return;
 
     event.preventDefault();
     event.stopPropagation();
