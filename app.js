@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.16";
+const APP_VERSION = "1.0.17";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -120,7 +120,6 @@ let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
 
 let safeActionTouch = null;
-let suppressNativeClickUntil = 0;
 
 
 // ========================================
@@ -307,7 +306,6 @@ function setupSafeActionHandlers() {
 
     const state = safeActionTouch;
     safeActionTouch = null;
-    suppressNativeClickUntil = Date.now() + 800;
 
     if (!event.changedTouches || event.changedTouches.length !== 1) return;
 
@@ -325,26 +323,7 @@ function setupSafeActionHandlers() {
 
   document.addEventListener("touchcancel", () => {
     safeActionTouch = null;
-    suppressNativeClickUntil = Date.now() + 800;
   }, { passive: true, capture: true });
-
-  document.addEventListener("click", event => {
-    const element = getActionElementFromEvent(event);
-    if (!element) return;
-
-    if (Date.now() < suppressNativeClickUntil) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      return;
-    }
-
-    if (isActionElementDisabled(element)) return;
-
-    event.preventDefault();
-    event.stopPropagation();
-    executeSafeAction(element, event);
-  }, true);
 }
 
 // ========================================
