@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.10";
+const APP_VERSION = "1.0.11";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -13,6 +13,7 @@ const PULL_MAX_DISTANCE = 96;
 const SWIPE_ACTION_WIDTH = 124;
 const SWIPE_OPEN_THRESHOLD = 32;
 const SWIPE_CLOSE_THRESHOLD = 24;
+const BUTTON_TAP_MOVE_CANCEL_DISTANCE = 12;
 
 const REORDER_HOLD_MS = 520;
 const COPY_FEEDBACK_MS = 1400;
@@ -117,6 +118,80 @@ let isPulling = false;
 
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
+
+const guardedButtonTouches = new WeakMap();
+
+
+// ========================================
+// 共通タッチ判定
+// ========================================
+function getGuardedButtonFromEvent(event) {
+  if (!event || !event.target || typeof event.target.closest !== "function") return null;
+  return event.target.closest("button");
+}
+
+function setupButtonTapGuard() {
+  document.addEventListener("touchstart", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (!button || button.disabled) return;
+    if (!event.touches || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    guardedButtonTouches.set(button, {
+      startX: touch.clientX,
+      startY: touch.clientY,
+      moved: false
+    });
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchmove", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
+
+    const guard = guardedButtonTouches.get(button);
+    if (!guard || !event.touches || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - guard.startX);
+    const dy = Math.abs(touch.clientY - guard.startY);
+
+    if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) {
+      guard.moved = true;
+    }
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchend", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
+
+    // iOSではtouchend後にclickが発火するため、すぐには消さない。
+    // clickが来ない場合も、次回操作に持ち越さないよう少し後で消す。
+    setTimeout(() => {
+      guardedButtonTouches.delete(button);
+    }, 700);
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchcancel", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (button) guardedButtonTouches.delete(button);
+  }, { passive: true, capture: true });
+
+  document.addEventListener("click", event => {
+    const button = getGuardedButtonFromEvent(event);
+    if (!button) return;
+
+    const guard = guardedButtonTouches.get(button);
+    if (!guard) return;
+
+    guardedButtonTouches.delete(button);
+
+    if (!guard.moved) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+  }, true);
+}
 
 // ========================================
 // 起動画面・トースト
@@ -2553,6 +2628,7 @@ document.addEventListener("click", event => {
   }
 });
 
+setupButtonTapGuard();
 setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
