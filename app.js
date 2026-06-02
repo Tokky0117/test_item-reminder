@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.15";
+const APP_VERSION = "1.0.16";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -119,84 +119,60 @@ let isPulling = false;
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
 
-const safeActionTouches = new WeakMap();
-const safeActionClickSuppressions = new WeakMap();
-let activeSafeActionElement = null;
-let suppressSafeActionClicksUntil = 0;
+let safeActionTouch = null;
+let suppressNativeClickUntil = 0;
 
 
 // ========================================
 // 共通タッチ判定
 // ========================================
-function getSafeActionElementFromEvent(event) {
+function getActionElementFromEvent(event) {
   if (!event || !event.target || typeof event.target.closest !== "function") return null;
   return event.target.closest("[data-action]");
 }
 
-function isSafeActionDisabled(element) {
+function isActionElementDisabled(element) {
   if (!element) return true;
   if (element.disabled) return true;
   if (element.getAttribute("aria-disabled") === "true") return true;
   return false;
 }
 
-function getTouchByIdentifier(touchList, identifier) {
-  if (!touchList) return null;
+function isTouchInsideElement(touch, element) {
+  if (!touch || !element) return false;
+  const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
+  return !!(endElement && element.contains(endElement));
+}
 
-  for (let i = 0; i < touchList.length; i += 1) {
-    if (touchList[i].identifier === identifier) {
-      return touchList[i];
+function getActionEventProxy(event) {
+  return {
+    originalEvent: event,
+    preventDefault() {
+      if (event && typeof event.preventDefault === "function" && event.cancelable) {
+        event.preventDefault();
+      }
+    },
+    stopPropagation() {
+      if (event && typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+    },
+    stopImmediatePropagation() {
+      if (event && typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
     }
-  }
-
-  return null;
-}
-
-function markSafeActionClickSuppressed(element) {
-  suppressSafeActionClicksUntil = Date.now() + 900;
-
-  if (!element) return;
-  safeActionClickSuppressions.set(element, suppressSafeActionClicksUntil);
-}
-
-function shouldSuppressSafeActionClick(element) {
-  if (!element) return false;
-
-  const now = Date.now();
-
-  // iOSでは touchend 後に、元の要素や置き換わった要素へ click が遅れて飛ぶことがある。
-  // touchend で安全判定済みの直後は、data-action の click 実行を丸ごと抑止する。
-  if (now <= suppressSafeActionClicksUntil) {
-    safeActionClickSuppressions.delete(element);
-    return true;
-  }
-
-  const until = safeActionClickSuppressions.get(element);
-  if (!until) return false;
-
-  if (now <= until) {
-    safeActionClickSuppressions.delete(element);
-    return true;
-  }
-
-  safeActionClickSuppressions.delete(element);
-  return false;
-}
-
-function shouldPassLongPressToCard(element, guard) {
-  if (!element || !guard) return false;
-  if (element.dataset.cardGesture !== "true") return false;
-  return Date.now() - guard.startedAt >= REORDER_HOLD_MS;
+  };
 }
 
 function executeSafeAction(element, event) {
-  if (!element || isSafeActionDisabled(element)) return;
+  if (!element || isActionElementDisabled(element)) return;
 
   const action = element.dataset.action;
-  if (!action) return;
+  const safeEvent = getActionEventProxy(event);
 
   switch (action) {
-    case "start":
+    case "start-title":
       startFromTitleScreen();
       break;
     case "toggle-shopping":
@@ -209,7 +185,7 @@ function executeSafeAction(element, event) {
       openAddModal();
       break;
     case "copy-shopping":
-      copyShoppingList(event);
+      copyShoppingList(safeEvent);
       break;
     case "open-purchase-confirm":
       openPurchaseConfirm();
@@ -221,10 +197,10 @@ function executeSafeAction(element, event) {
       closeItemModal();
       break;
     case "toggle-category-picker":
-      toggleCategoryPicker(event);
+      toggleCategoryPicker(safeEvent);
       break;
     case "toggle-owner-picker":
-      toggleOwnerPicker(event);
+      toggleOwnerPicker(safeEvent);
       break;
     case "confirm-item-modal":
       confirmItemModal();
@@ -241,7 +217,7 @@ function executeSafeAction(element, event) {
     case "confirm-purchase-complete":
       confirmPurchaseComplete();
       break;
-    case "close-home-cancel":
+    case "close-home-cancel-confirm":
       closeHomeCancelConfirm();
       break;
     case "confirm-home-cancel":
@@ -253,40 +229,39 @@ function executeSafeAction(element, event) {
     case "retry-pending-update":
       retryPendingUpdate();
       break;
-    case "load-latest-from-conflict":
+    case "load-latest-conflict":
       loadLatestFromConflict();
       break;
-    case "force-pending-conflict-save":
+    case "force-pending-conflict":
       forcePendingConflictSave();
       break;
-    case "return-to-title":
+    case "return-title-load-failure":
       returnToTitleFromLoadFailure();
       break;
-    case "retry-load":
+    case "retry-load-failure":
       retryLoadFromFailure();
       break;
     case "set-owner-tab":
-      setOwnerTab(element.dataset.ownerTab || "all");
+      setOwnerTab(element.dataset.owner || "all");
       break;
     case "toggle-category-collapse":
       toggleCategoryCollapse(element.dataset.category || "other");
       break;
     case "edit-swiped-item":
-      editSwipedItem(event, element.dataset.itemId || "");
+      editSwipedItem(safeEvent, element.dataset.itemId);
       break;
     case "delete-swiped-item":
-      deleteSwipedItem(event, element.dataset.itemId || "");
+      deleteSwipedItem(safeEvent, element.dataset.itemId);
       break;
-    case "toggle-spare": {
-      clearTimeout(reorderHoldTimer);
-      cancelItemTouch();
+    case "toggle-spare":
       toggleSpare(Number(element.dataset.index));
       break;
-    }
-    case "set-modal-category":
+    case "select-category":
+      safeEvent.stopPropagation();
       setModalCategory(element.dataset.category || "other");
       break;
-    case "set-modal-owner":
+    case "select-owner":
+      safeEvent.stopPropagation();
       setModalIcon(element.dataset.owner || "共");
       break;
     default:
@@ -296,113 +271,78 @@ function executeSafeAction(element, event) {
 
 function setupSafeActionHandlers() {
   document.addEventListener("touchstart", event => {
-    const element = getSafeActionElementFromEvent(event);
-    if (!element || isSafeActionDisabled(element)) return;
-    if (!event.touches || event.touches.length !== 1) return;
+    const element = getActionElementFromEvent(event);
+    if (!element || isActionElementDisabled(element)) {
+      safeActionTouch = null;
+      return;
+    }
+    if (!event.touches || event.touches.length !== 1) {
+      safeActionTouch = null;
+      return;
+    }
 
     const touch = event.touches[0];
-    activeSafeActionElement = element;
-    safeActionTouches.set(element, {
-      identifier: touch.identifier,
+    safeActionTouch = {
+      element: element,
       startX: touch.clientX,
       startY: touch.clientY,
-      moved: false,
-      startedAt: Date.now()
-    });
+      moved: false
+    };
   }, { passive: true, capture: true });
 
   document.addEventListener("touchmove", event => {
-    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
-    if (!element) return;
+    if (!safeActionTouch || !event.touches || event.touches.length !== 1) return;
 
-    const guard = safeActionTouches.get(element);
-    if (!guard) return;
-
-    const touch = getTouchByIdentifier(event.touches, guard.identifier);
-    if (!touch) return;
-
-    const dx = Math.abs(touch.clientX - guard.startX);
-    const dy = Math.abs(touch.clientY - guard.startY);
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - safeActionTouch.startX);
+    const dy = Math.abs(touch.clientY - safeActionTouch.startY);
 
     if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) {
-      guard.moved = true;
+      safeActionTouch.moved = true;
     }
   }, { passive: true, capture: true });
 
   document.addEventListener("touchend", event => {
-    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
-    if (!element) return;
+    if (!safeActionTouch) return;
 
-    const guard = safeActionTouches.get(element);
-    if (!guard) return;
+    const state = safeActionTouch;
+    safeActionTouch = null;
+    suppressNativeClickUntil = Date.now() + 800;
 
-    const touch = getTouchByIdentifier(event.changedTouches, guard.identifier);
-    if (!touch) return;
+    if (!event.changedTouches || event.changedTouches.length !== 1) return;
 
-    safeActionTouches.delete(element);
-    activeSafeActionElement = null;
+    const touch = event.changedTouches[0];
+    const dx = Math.abs(touch.clientX - state.startX);
+    const dy = Math.abs(touch.clientY - state.startY);
 
-    const dx = Math.abs(touch.clientX - guard.startX);
-    const dy = Math.abs(touch.clientY - guard.startY);
-    const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
-    const endedInside = !!(endElement && element.contains(endElement));
-    const moved = guard.moved || dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE;
+    if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) return;
+    if (state.moved) return;
+    if (!isTouchInsideElement(touch, state.element)) return;
+    if (isActionElementDisabled(state.element)) return;
 
-    // 在庫トグルの長押しはカード側の並び替えに渡す。
-    if (shouldPassLongPressToCard(element, guard)) {
-      markSafeActionClickSuppressed(element);
-      return;
-    }
+    executeSafeAction(state.element, event);
+  }, { passive: false });
 
-    if (moved || !endedInside || isSafeActionDisabled(element)) {
-      markSafeActionClickSuppressed(element);
-
-      if (element.dataset.cardGesture !== "true") {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-      }
-
-      return;
-    }
-
-    markSafeActionClickSuppressed(element);
-    event.preventDefault();
-    event.stopPropagation();
-    event.stopImmediatePropagation();
-    executeSafeAction(element, event);
-  }, { passive: false, capture: true });
-
-  document.addEventListener("touchcancel", event => {
-    const element = activeSafeActionElement || getSafeActionElementFromEvent(event);
-    if (element) {
-      safeActionTouches.delete(element);
-      markSafeActionClickSuppressed(element);
-    }
-    activeSafeActionElement = null;
+  document.addEventListener("touchcancel", () => {
+    safeActionTouch = null;
+    suppressNativeClickUntil = Date.now() + 800;
   }, { passive: true, capture: true });
 
   document.addEventListener("click", event => {
-    const element = getSafeActionElementFromEvent(event);
+    const element = getActionElementFromEvent(event);
     if (!element) return;
 
-    if (shouldSuppressSafeActionClick(element)) {
+    if (Date.now() < suppressNativeClickUntil) {
       event.preventDefault();
       event.stopPropagation();
       event.stopImmediatePropagation();
       return;
     }
 
-    if (isSafeActionDisabled(element)) {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      return;
-    }
+    if (isActionElementDisabled(element)) return;
 
     event.preventDefault();
     event.stopPropagation();
-    event.stopImmediatePropagation();
     executeSafeAction(element, event);
   }, true);
 }
@@ -552,7 +492,7 @@ function renderOwnerTabs() {
     button.setAttribute("aria-label", tab.full);
     button.disabled = isModeSaving || isReordering;
     button.dataset.action = "set-owner-tab";
-    button.dataset.ownerTab = tab.key;
+    button.dataset.owner = tab.key;
 
     tabContainer.appendChild(button);
   });
@@ -1427,7 +1367,6 @@ function createItemRow(item) {
       ontouchmove="moveItemTouch(event)"
       ontouchend="endItemTouch(event, '${item.id}')"
       ontouchcancel="cancelItemTouch()"
-      onclick="handleItemTap(event, '${item.id}')"
     >
       <div class="swipe-actions">
         <button class="swipe-action-button delete" data-action="delete-swiped-item" data-item-id="${item.id}" aria-label="日用品を削除">
@@ -1512,7 +1451,6 @@ function createStockToggleHtml(item, index) {
       ${isModeSaving || isReordering ? "disabled" : ""}
       data-action="toggle-spare"
       data-index="${index}"
-      data-card-gesture="true"
       aria-label="${label}"
     >
       <span class="stock-toggle-track">
@@ -2128,7 +2066,7 @@ function closeSwipedItemWithoutRender() {
 }
 
 function editSwipedItem(event, id) {
-  if (event) event.stopPropagation();
+  event.stopPropagation();
   if (isReordering) return;
 
   closeSwipedItemWithoutRender();
@@ -2137,7 +2075,7 @@ function editSwipedItem(event, id) {
 }
 
 function deleteSwipedItem(event, id) {
-  if (event) event.stopPropagation();
+  event.stopPropagation();
   if (isReordering) return;
 
   closeSwipedItemWithoutRender();
@@ -2450,7 +2388,7 @@ function renderCategoryPicker() {
       <span>${category.name}</span>
       ${modalCategory === category.key ? createCheckSvg() : ""}
     `;
-    button.dataset.action = "set-modal-category";
+    button.dataset.action = "select-category";
     button.dataset.category = category.key;
 
     menu.appendChild(button);
@@ -2477,7 +2415,7 @@ function renderOwnerPicker() {
       <span>${owner.name}</span>
       ${modalIcon === owner.key ? createCheckSvg() : ""}
     `;
-    button.dataset.action = "set-modal-owner";
+    button.dataset.action = "select-owner";
     button.dataset.owner = owner.key;
 
     menu.appendChild(button);
@@ -2835,6 +2773,7 @@ document.addEventListener("click", event => {
   if (event.target.closest("#loadFailureModal")) return;
 
   if (event.target.closest("#toast")) return;
+  if (event.target.closest("[data-action]")) return;
 
   hideToast();
 
