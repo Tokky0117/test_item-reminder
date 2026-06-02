@@ -852,15 +852,6 @@ h1,
 }
 
 
-.app.has-swipe-open .spare-badge,
-.app.has-swipe-open .shopping-check-button {
-  pointer-events: none;
-}
-
-.app.has-swipe-open .spare-badge:active,
-.app.has-swipe-open .shopping-check-button:active {
-  transform: none;
-}
 
 .spare-badge:disabled {
   opacity: 0.45;
