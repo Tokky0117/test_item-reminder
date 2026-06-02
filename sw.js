@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-reminder-v1.0.14";
+const CACHE_NAME = "daily-reminder-v1.0.15";
 
 const FILES_TO_CACHE = [
   "./",
