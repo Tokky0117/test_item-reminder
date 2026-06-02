@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.9";
+const APP_VERSION = "1.0.10";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -1349,6 +1349,13 @@ function endItemTouch(event, id) {
     swipedItemId = null;
     cancelItemTouch();
     render();
+    return;
+  }
+
+  // ただのタップでは親カード側で再描画しない。
+  // 在庫トグルの click が touchend 後に自然に発火できるようにする。
+  if (!swipeMoved && !swipeCanceled && !swipeDirection) {
+    cancelItemTouch();
     return;
   }
 
