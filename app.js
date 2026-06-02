@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.7";
+const APP_VERSION = "1.0.8";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -1256,9 +1256,6 @@ function startItemTouch(event, id) {
 
   const isOpenItem = swipedItemId === id;
 
-  if (!isOpenItem && event.target.closest(".spare-badge")) return;
-  if (!isOpenItem && event.target.closest(".shopping-check-button")) return;
-
   swipeFrameElement = event.currentTarget;
   swipeItemElement = swipeFrameElement.querySelector(".item");
 
@@ -1366,6 +1363,13 @@ function endItemTouch(event, id) {
         swipedItemId = id;
       }
     }
+  }
+
+  if (swipeMoved) {
+    suppressNextTap = true;
+    setTimeout(() => {
+      suppressNextTap = false;
+    }, 300);
   }
 
   cancelItemTouch();
@@ -1838,7 +1842,7 @@ function deleteSwipedItem(event, id) {
 }
 
 function toggleSpare(index) {
-  if (isModeSaving || isReordering) return;
+  if (isModeSaving || isReordering || suppressNextTap) return;
 
   if (swipedItemId) {
     closeSwipedItem();
@@ -1939,7 +1943,12 @@ function showCopyButtonDone() {
   }, COPY_FEEDBACK_MS);
 }
 
-async function copyShoppingList() {
+async function copyShoppingList(event) {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
   if (isModeSaving || isReordering) return;
 
   const targetItems = getShoppingCopyItems();
