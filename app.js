@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.8";
+const APP_VERSION = "1.0.9";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -728,6 +728,9 @@ function setupSwipeCloseGuards() {
   container.addEventListener("touchmove", event => {
     if (!swipedItemId) return;
     if (event.target.closest(".swipe-action-button")) return;
+
+    const openRow = event.target.closest(".row.swipe-open");
+    if (openRow) return;
 
     event.preventDefault();
     event.stopPropagation();
