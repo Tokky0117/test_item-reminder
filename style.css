@@ -851,9 +851,6 @@ h1,
   justify-content: center;
 }
 
-.spare-badge:active {
-  transform: scale(0.95);
-}
 
 .app.has-swipe-open .spare-badge,
 .app.has-swipe-open .shopping-check-button {
@@ -942,9 +939,6 @@ h1,
   transition: opacity 0.18s ease, transform 0.08s ease, color 0.18s ease;
 }
 
-.shopping-check-button:active {
-  transform: scale(0.95);
-}
 
 .shopping-check-button:disabled {
   opacity: 0.45;
@@ -1069,7 +1063,7 @@ h1,
   line-height: 1.4;
   opacity: 0;
   pointer-events: auto;
-  z-index: 180;
+  z-index: 500;
   transition: opacity 0.22s ease, transform 0.22s ease;
   text-align: center;
   white-space: nowrap;
