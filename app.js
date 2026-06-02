@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.14";
+const APP_VERSION = "1.0.15";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -122,6 +122,7 @@ let lastSavePayloadLength = 0;
 const safeActionTouches = new WeakMap();
 const safeActionClickSuppressions = new WeakMap();
 let activeSafeActionElement = null;
+let suppressSafeActionClicksUntil = 0;
 
 
 // ========================================
@@ -152,17 +153,28 @@ function getTouchByIdentifier(touchList, identifier) {
 }
 
 function markSafeActionClickSuppressed(element) {
+  suppressSafeActionClicksUntil = Date.now() + 900;
+
   if (!element) return;
-  safeActionClickSuppressions.set(element, Date.now() + 800);
+  safeActionClickSuppressions.set(element, suppressSafeActionClicksUntil);
 }
 
 function shouldSuppressSafeActionClick(element) {
   if (!element) return false;
 
+  const now = Date.now();
+
+  // iOSでは touchend 後に、元の要素や置き換わった要素へ click が遅れて飛ぶことがある。
+  // touchend で安全判定済みの直後は、data-action の click 実行を丸ごと抑止する。
+  if (now <= suppressSafeActionClicksUntil) {
+    safeActionClickSuppressions.delete(element);
+    return true;
+  }
+
   const until = safeActionClickSuppressions.get(element);
   if (!until) return false;
 
-  if (Date.now() <= until) {
+  if (now <= until) {
     safeActionClickSuppressions.delete(element);
     return true;
   }
