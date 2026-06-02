@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.18";
+const APP_VERSION = "1.0.19";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -117,6 +117,8 @@ let isPulling = false;
 
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
+let lastSaveDebug = null;
+let lastJsonpDebug = null;
 
 // ========================================
 // 起動画面・トースト
@@ -562,19 +564,40 @@ function requestJsonp(params) {
       query.set(key, params[key]);
     });
 
+    const requestUrl = WEB_APP_URL + "?" + query.toString();
+
+    lastJsonpDebug = {
+      action: params && params.action ? String(params.action) : "load",
+      urlLength: requestUrl.length,
+      startedAt: new Date().toLocaleTimeString("ja-JP", { hour12: false })
+    };
+
     window[callbackName] = function(response) {
       delete window[callbackName];
       script.remove();
+
+      lastJsonpDebug = Object.assign({}, lastJsonpDebug || {}, {
+        result: "callback",
+        status: response && response.status !== undefined ? String(response.status) : "no status",
+        version: response && response.version !== undefined ? String(response.version) : "",
+        message: response && response.message ? String(response.message) : ""
+      });
+
       resolve(response);
     };
 
     script.onerror = function() {
       delete window[callbackName];
       script.remove();
+
+      lastJsonpDebug = Object.assign({}, lastJsonpDebug || {}, {
+        result: "script.onerror"
+      });
+
       reject(new Error("通信に失敗しました"));
     };
 
-    script.src = WEB_APP_URL + "?" + query.toString();
+    script.src = requestUrl;
     document.body.appendChild(script);
   });
 }
@@ -601,12 +624,38 @@ async function saveItemsToServer(options = {}) {
   const payloadText = getSavePayloadText(force);
   lastSavePayloadLength = payloadText.length;
 
-  return requestJsonp({
+  lastSaveDebug = {
+    appVersion: APP_VERSION,
     action: "saveAll",
-    baseVersion: String(serverVersion || 0),
     force: force ? "true" : "false",
-    payload: payloadText
-  });
+    baseVersion: String(serverVersion || 0),
+    itemCount: String(items.length),
+    payloadLength: String(payloadText.length),
+    startedAt: new Date().toLocaleTimeString("ja-JP", { hour12: false })
+  };
+
+  try {
+    const response = await requestJsonp({
+      action: "saveAll",
+      baseVersion: String(serverVersion || 0),
+      force: force ? "true" : "false",
+      payload: payloadText
+    });
+
+    lastSaveDebug = Object.assign({}, lastSaveDebug || {}, {
+      responseStatus: response && response.status !== undefined ? String(response.status) : "no status",
+      responseVersion: response && response.version !== undefined ? String(response.version) : "",
+      responseMessage: response && response.message ? String(response.message) : ""
+    });
+
+    return response;
+  } catch (error) {
+    lastSaveDebug = Object.assign({}, lastSaveDebug || {}, {
+      errorName: error && error.name ? String(error.name) : "Error",
+      errorMessage: error && error.message ? String(error.message) : String(error)
+    });
+    throw error;
+  }
 }
 
 function isConflictResult(result) {
@@ -2358,12 +2407,45 @@ function confirmHomeCancel() {
   exitModeWithoutSaving();
 }
 
+function formatSaveDebugMessage() {
+  const lines = [];
+  const save = lastSaveDebug || {};
+  const jsonp = lastJsonpDebug || {};
+
+  lines.push("");
+  lines.push("--- 診断情報 ---");
+  lines.push("appVersion: " + (save.appVersion || APP_VERSION));
+  lines.push("action: " + (save.action || jsonp.action || ""));
+  lines.push("baseVersion: " + (save.baseVersion || ""));
+  lines.push("serverVersion: " + String(serverVersion || 0));
+  lines.push("force: " + (save.force || ""));
+  lines.push("itemCount: " + (save.itemCount || String(items.length)));
+  lines.push("payloadLength: " + (save.payloadLength || String(lastSavePayloadLength || 0)));
+  lines.push("urlLength: " + (jsonp.urlLength !== undefined ? String(jsonp.urlLength) : ""));
+  lines.push("jsonpResult: " + (jsonp.result || ""));
+  lines.push("responseStatus: " + (save.responseStatus || jsonp.status || ""));
+  lines.push("responseVersion: " + (save.responseVersion || jsonp.version || ""));
+
+  const message = save.responseMessage || jsonp.message || save.errorMessage || "";
+  if (message) {
+    lines.push("message: " + message);
+  }
+
+  if (save.errorName || save.errorMessage) {
+    lines.push("error: " + [save.errorName, save.errorMessage].filter(Boolean).join(" / "));
+  }
+
+  return lines.join("\n");
+}
+
 function getUpdateRetryMessage() {
   let message = "サーバーへの更新に失敗しました。\n画面上の変更はまだ保存されていません。";
 
   if (isLargeSavePayload()) {
     message += "\nデータ量が多くなっている可能性があります。";
   }
+
+  message += formatSaveDebugMessage();
 
   return message;
 }
