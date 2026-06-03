@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.0";
+const APP_VERSION = "2.0.1";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -857,8 +857,8 @@ function getOrderPayloadForCategory(category) {
       return items.findIndex(base => base.id === a.id) - items.findIndex(base => base.id === b.id);
     })
     .map((item, index) => ({
-      id: item.id,
-      categoryOrder: index + 1
+      i: item.id,
+      o: index + 1
     }));
 }
 
@@ -2739,11 +2739,24 @@ function retryPendingUpdate() {
   }
 }
 
-function cancelPendingUpdate() {
+async function cancelPendingUpdate() {
   closeUpdateRetryModal();
   pendingUpdateAction = null;
   resetModesAndSelections();
-  loadItems({ afterLoadMessage: "更新をキャンセルし、最新リストを読み込みました" });
+  hideToast();
+  resetPullRefreshVisual();
+  setConflictModalLoading(true);
+  document.getElementById("conflictModal").classList.add("show");
+
+  try {
+    await loadLatestItemsForConflictCancel();
+    closeConflictModal();
+    showToast("更新をキャンセルし、最新リストを読み込みました");
+  } catch (error) {
+    console.error(error);
+    closeConflictModal();
+    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+  }
 }
 
 function setConflictModalLoading(isLoading) {
