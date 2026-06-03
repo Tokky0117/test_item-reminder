@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.3";
+const APP_VERSION = "2.0.4";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -111,6 +111,7 @@ let immediateSaveQueue = [];
 let pendingSpareChanges = new Map();
 let spareSaveTimer = null;
 let isSpareBatchSaveRunning = false;
+let spareBatchSavePromise = null;
 let isModeSaving = false;
 
 let isRefreshing = false;
@@ -961,8 +962,23 @@ async function saveSpareChanges(changes, force = false) {
   return saveItemsToServer({ mutation: mutation, force: force });
 }
 
+function createDeferredPromise() {
+  let resolve;
+  let reject;
+  const promise = new Promise((resolveFn, rejectFn) => {
+    resolve = resolveFn;
+    reject = rejectFn;
+  });
+  return { promise, resolve, reject };
+}
+
 async function flushSpareChanges(force = false) {
-  if (isSpareBatchSaveRunning) return;
+  if (isSpareBatchSaveRunning) {
+    if (spareBatchSavePromise) {
+      await spareBatchSavePromise;
+    }
+    return;
+  }
 
   if (spareSaveTimer) {
     clearTimeout(spareSaveTimer);
@@ -977,6 +993,8 @@ async function flushSpareChanges(force = false) {
   const changes = buildSpareChangesPayload(pendingSpareChanges);
   pendingSpareChanges.clear();
   isSpareBatchSaveRunning = true;
+  const spareBatchDeferred = createDeferredPromise();
+  spareBatchSavePromise = spareBatchDeferred.promise;
   updateSaveStatusIndicator();
 
   try {
@@ -999,6 +1017,8 @@ async function flushSpareChanges(force = false) {
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isSpareBatchSaveRunning = false;
+    spareBatchSavePromise = null;
+    spareBatchDeferred.resolve();
 
     if (pendingSpareChanges.size > 0 && !spareSaveTimer) {
       spareSaveTimer = setTimeout(() => {
@@ -1073,7 +1093,11 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
     force: args.force
   };
 
-  if (!isSpareBatchSaveRunning && (pendingSpareChanges.size > 0 || spareSaveTimer)) {
+  if (isSpareBatchSaveRunning && spareBatchSavePromise) {
+    await spareBatchSavePromise;
+  }
+
+  if (pendingSpareChanges.size > 0 || spareSaveTimer) {
     await flushSpareChanges();
   }
 
