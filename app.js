@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "1.0.19";
+const APP_VERSION = "2.0.0";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -13,6 +13,7 @@ const PULL_MAX_DISTANCE = 96;
 const SWIPE_ACTION_WIDTH = 124;
 const SWIPE_OPEN_THRESHOLD = 32;
 const SWIPE_CLOSE_THRESHOLD = 24;
+const BUTTON_TAP_MOVE_CANCEL_DISTANCE = 12;
 
 const REORDER_HOLD_MS = 520;
 const COPY_FEEDBACK_MS = 1400;
@@ -20,7 +21,7 @@ const REORDER_CANCEL_MOVE = 8;
 const REORDER_STEP_DISTANCE = 44;
 const REORDER_AUTO_SCROLL_ZONE = 64;
 const REORDER_AUTO_SCROLL_MAX_SPEED = 9;
-const ORDER_STEP = 10;
+const ORDER_STEP = 1;
 
 const OWNER_TABS = [
   { key: "共", full: "共同", short: "共" },
@@ -117,8 +118,234 @@ let isPulling = false;
 
 let isLoadFailureModalOpen = false;
 let lastSavePayloadLength = 0;
-let lastSaveDebug = null;
-let lastJsonpDebug = null;
+
+let safeActionTouch = null;
+let suppressNativeClickUntil = 0;
+
+
+// ========================================
+// 共通タッチ判定
+// ========================================
+function getActionElementFromEvent(event) {
+  if (!event || !event.target || typeof event.target.closest !== "function") return null;
+  return event.target.closest("[data-action]");
+}
+
+function isActionElementDisabled(element) {
+  if (!element) return true;
+  if (element.disabled) return true;
+  if (element.getAttribute("aria-disabled") === "true") return true;
+  return false;
+}
+
+function isTouchInsideElement(touch, element) {
+  if (!touch || !element) return false;
+  const endElement = document.elementFromPoint(touch.clientX, touch.clientY);
+  return !!(endElement && element.contains(endElement));
+}
+
+function getActionEventProxy(event) {
+  return {
+    originalEvent: event,
+    preventDefault() {
+      if (event && typeof event.preventDefault === "function" && event.cancelable) {
+        event.preventDefault();
+      }
+    },
+    stopPropagation() {
+      if (event && typeof event.stopPropagation === "function") {
+        event.stopPropagation();
+      }
+    },
+    stopImmediatePropagation() {
+      if (event && typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+    }
+  };
+}
+
+function executeSafeAction(element, event) {
+  if (!element || isActionElementDisabled(element)) return;
+
+  const action = element.dataset.action;
+  const safeEvent = getActionEventProxy(event);
+
+  switch (action) {
+    case "start-title":
+      startFromTitleScreen();
+      break;
+    case "toggle-shopping":
+      toggleShoppingMode();
+      break;
+    case "open-home-cancel":
+      openHomeCancelConfirm();
+      break;
+    case "open-add":
+      openAddModal();
+      break;
+    case "copy-shopping":
+      copyShoppingList(safeEvent);
+      break;
+    case "open-purchase-confirm":
+      openPurchaseConfirm();
+      break;
+    case "hide-toast":
+      hideToast();
+      break;
+    case "close-item-modal":
+      closeItemModal();
+      break;
+    case "toggle-category-picker":
+      toggleCategoryPicker(safeEvent);
+      break;
+    case "toggle-owner-picker":
+      toggleOwnerPicker(safeEvent);
+      break;
+    case "confirm-item-modal":
+      confirmItemModal();
+      break;
+    case "close-delete-confirm":
+      closeDeleteConfirm();
+      break;
+    case "confirm-delete-item":
+      confirmDeleteItem();
+      break;
+    case "close-purchase-confirm":
+      closePurchaseConfirm();
+      break;
+    case "confirm-purchase-complete":
+      confirmPurchaseComplete();
+      break;
+    case "close-home-cancel-confirm":
+      closeHomeCancelConfirm();
+      break;
+    case "confirm-home-cancel":
+      confirmHomeCancel();
+      break;
+    case "cancel-pending-update":
+      cancelPendingUpdate();
+      break;
+    case "retry-pending-update":
+      retryPendingUpdate();
+      break;
+    case "load-latest-conflict":
+      loadLatestFromConflict();
+      break;
+    case "force-pending-conflict":
+      forcePendingConflictSave();
+      break;
+    case "return-title-load-failure":
+      returnToTitleFromLoadFailure();
+      break;
+    case "retry-load-failure":
+      retryLoadFromFailure();
+      break;
+    case "set-owner-tab":
+      setOwnerTab(element.dataset.owner || "all");
+      break;
+    case "toggle-category-collapse":
+      toggleCategoryCollapse(element.dataset.category || "other");
+      break;
+    case "edit-swiped-item":
+      editSwipedItem(safeEvent, element.dataset.itemId);
+      break;
+    case "delete-swiped-item":
+      deleteSwipedItem(safeEvent, element.dataset.itemId);
+      break;
+    case "toggle-spare":
+      toggleSpare(Number(element.dataset.index));
+      break;
+    case "select-category":
+      safeEvent.stopPropagation();
+      setModalCategory(element.dataset.category || "other");
+      break;
+    case "select-owner":
+      safeEvent.stopPropagation();
+      setModalIcon(element.dataset.owner || "共");
+      break;
+    default:
+      break;
+  }
+}
+
+function setupSafeActionHandlers() {
+  document.addEventListener("touchstart", event => {
+    const element = getActionElementFromEvent(event);
+    if (!element || isActionElementDisabled(element)) {
+      safeActionTouch = null;
+      return;
+    }
+    if (!event.touches || event.touches.length !== 1) {
+      safeActionTouch = null;
+      return;
+    }
+
+    const touch = event.touches[0];
+    safeActionTouch = {
+      element: element,
+      startX: touch.clientX,
+      startY: touch.clientY,
+      moved: false
+    };
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchmove", event => {
+    if (!safeActionTouch || !event.touches || event.touches.length !== 1) return;
+
+    const touch = event.touches[0];
+    const dx = Math.abs(touch.clientX - safeActionTouch.startX);
+    const dy = Math.abs(touch.clientY - safeActionTouch.startY);
+
+    if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) {
+      safeActionTouch.moved = true;
+    }
+  }, { passive: true, capture: true });
+
+  document.addEventListener("touchend", event => {
+    if (!safeActionTouch) return;
+
+    const state = safeActionTouch;
+    safeActionTouch = null;
+    suppressNativeClickUntil = Date.now() + 800;
+
+    if (!event.changedTouches || event.changedTouches.length !== 1) return;
+
+    const touch = event.changedTouches[0];
+    const dx = Math.abs(touch.clientX - state.startX);
+    const dy = Math.abs(touch.clientY - state.startY);
+
+    if (dx > BUTTON_TAP_MOVE_CANCEL_DISTANCE || dy > BUTTON_TAP_MOVE_CANCEL_DISTANCE) return;
+    if (state.moved) return;
+    if (!isTouchInsideElement(touch, state.element)) return;
+    if (isActionElementDisabled(state.element)) return;
+
+    executeSafeAction(state.element, event);
+  }, { passive: false });
+
+  document.addEventListener("touchcancel", () => {
+    safeActionTouch = null;
+    suppressNativeClickUntil = Date.now() + 800;
+  }, { passive: true, capture: true });
+
+  document.addEventListener("click", event => {
+    const element = getActionElementFromEvent(event);
+    if (!element) return;
+
+    if (Date.now() < suppressNativeClickUntil) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return;
+    }
+
+    if (isActionElementDisabled(element)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    executeSafeAction(element, event);
+  }, true);
+}
 
 // ========================================
 // 起動画面・トースト
@@ -264,7 +491,8 @@ function renderOwnerTabs() {
     button.textContent = isActive ? tab.full : tab.short;
     button.setAttribute("aria-label", tab.full);
     button.disabled = isModeSaving || isReordering;
-    button.onclick = () => setOwnerTab(tab.key);
+    button.dataset.action = "set-owner-tab";
+    button.dataset.owner = tab.key;
 
     tabContainer.appendChild(button);
   });
@@ -564,40 +792,19 @@ function requestJsonp(params) {
       query.set(key, params[key]);
     });
 
-    const requestUrl = WEB_APP_URL + "?" + query.toString();
-
-    lastJsonpDebug = {
-      action: params && params.action ? String(params.action) : "load",
-      urlLength: requestUrl.length,
-      startedAt: new Date().toLocaleTimeString("ja-JP", { hour12: false })
-    };
-
     window[callbackName] = function(response) {
       delete window[callbackName];
       script.remove();
-
-      lastJsonpDebug = Object.assign({}, lastJsonpDebug || {}, {
-        result: "callback",
-        status: response && response.status !== undefined ? String(response.status) : "no status",
-        version: response && response.version !== undefined ? String(response.version) : "",
-        message: response && response.message ? String(response.message) : ""
-      });
-
       resolve(response);
     };
 
     script.onerror = function() {
       delete window[callbackName];
       script.remove();
-
-      lastJsonpDebug = Object.assign({}, lastJsonpDebug || {}, {
-        result: "script.onerror"
-      });
-
       reject(new Error("通信に失敗しました"));
     };
 
-    script.src = requestUrl;
+    script.src = WEB_APP_URL + "?" + query.toString();
     document.body.appendChild(script);
   });
 }
@@ -619,43 +826,66 @@ function isLargeSavePayload() {
   return lastSavePayloadLength >= SAVE_PAYLOAD_WARNING_LENGTH;
 }
 
+function createSavePayload(action, data = {}, force = false) {
+  return {
+    ...data,
+    action: action || "saveAll",
+    baseVersion: serverVersion || 0,
+    force: force === true
+  };
+}
+
+function getErrorCodeFromResult(result, fallbackCode) {
+  if (result && result.code) return String(result.code);
+  return fallbackCode || "N01";
+}
+
+function createSaveError(result, fallbackMessage, fallbackCode) {
+  const error = new Error(result && result.message ? result.message : fallbackMessage || "保存に失敗しました");
+  error.code = getErrorCodeFromResult(result, fallbackCode || "S01");
+  error.result = result || null;
+  return error;
+}
+
+function getOrderPayloadForCategory(category) {
+  const key = category || "other";
+  return items
+    .filter(item => (item.category || "other") === key)
+    .sort((a, b) => {
+      const orderDiff = getOrderValue(a) - getOrderValue(b);
+      if (orderDiff !== 0) return orderDiff;
+      return items.findIndex(base => base.id === a.id) - items.findIndex(base => base.id === b.id);
+    })
+    .map((item, index) => ({
+      id: item.id,
+      categoryOrder: index + 1
+    }));
+}
+
+function buildSaveMutation(action, data = {}) {
+  return {
+    action: action,
+    ...data
+  };
+}
+
 async function saveItemsToServer(options = {}) {
   const force = options.force === true;
-  const payloadText = getSavePayloadText(force);
+  const mutation = options.mutation || null;
+  const action = mutation && mutation.action ? mutation.action : "saveAll";
+  const payload = mutation
+    ? createSavePayload(action, mutation, force)
+    : buildSavePayload(force);
+
+  const payloadText = JSON.stringify(payload);
   lastSavePayloadLength = payloadText.length;
 
-  lastSaveDebug = {
-    appVersion: APP_VERSION,
-    action: "saveAll",
-    force: force ? "true" : "false",
+  return requestJsonp({
+    action: action,
     baseVersion: String(serverVersion || 0),
-    itemCount: String(items.length),
-    payloadLength: String(payloadText.length),
-    startedAt: new Date().toLocaleTimeString("ja-JP", { hour12: false })
-  };
-
-  try {
-    const response = await requestJsonp({
-      action: "saveAll",
-      baseVersion: String(serverVersion || 0),
-      force: force ? "true" : "false",
-      payload: payloadText
-    });
-
-    lastSaveDebug = Object.assign({}, lastSaveDebug || {}, {
-      responseStatus: response && response.status !== undefined ? String(response.status) : "no status",
-      responseVersion: response && response.version !== undefined ? String(response.version) : "",
-      responseMessage: response && response.message ? String(response.message) : ""
-    });
-
-    return response;
-  } catch (error) {
-    lastSaveDebug = Object.assign({}, lastSaveDebug || {}, {
-      errorName: error && error.name ? String(error.name) : "Error",
-      errorMessage: error && error.message ? String(error.message) : String(error)
-    });
-    throw error;
-  }
+    force: force ? "true" : "false",
+    payload: payloadText
+  });
 }
 
 function isConflictResult(result) {
@@ -672,7 +902,25 @@ function applySaveSuccess(result) {
   }
 }
 
-async function saveImmediateChange(force = false) {
+function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
+  if (typeof mutationOrForce === "boolean") {
+    return {
+      mutation: null,
+      force: mutationOrForce === true
+    };
+  }
+
+  return {
+    mutation: mutationOrForce || null,
+    force: maybeForce === true
+  };
+}
+
+async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
+  const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
+  let force = args.force;
+  const mutation = args.mutation;
+
   if (isImmediateSaveRunning) {
     immediateSaveQueued = true;
     return;
@@ -684,17 +932,17 @@ async function saveImmediateChange(force = false) {
     while (true) {
       immediateSaveQueued = false;
 
-      const result = await saveItemsToServer({ force: force });
+      const result = await saveItemsToServer({ mutation: mutation, force: force });
       force = false;
 
       if (isOkResult(result)) {
         applySaveSuccess(result);
       } else if (isConflictResult(result)) {
-        pendingConflictAction = () => saveImmediateChange(true);
+        pendingConflictAction = () => saveImmediateChange(mutation, true);
         openConflictModal();
         return;
       } else {
-        throw new Error(result && result.message ? result.message : "保存に失敗しました");
+        throw createSaveError(result, "保存に失敗しました", "S01");
       }
 
       if (!immediateSaveQueued) {
@@ -703,8 +951,8 @@ async function saveImmediateChange(force = false) {
     }
   } catch (error) {
     console.error(error);
-    pendingUpdateAction = () => saveImmediateChange(force);
-    openUpdateRetryModal();
+    pendingUpdateAction = () => saveImmediateChange(mutation, force);
+    openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isImmediateSaveRunning = false;
   }
@@ -714,10 +962,18 @@ async function commitModeAndExit(successMessage, force = false) {
   if (!hasModeChanges()) return;
   if (isModeSaving) return;
 
+  const purchaseIds = Array.from(shoppingModeItemIds).filter(id => {
+    const item = items.find(item => item.id === id);
+    return item && item.hasSpare === true;
+  });
+
   setModeSaving(true);
 
   try {
-    const result = await saveItemsToServer({ force: force });
+    const mutation = buildSaveMutation("completePurchase", {
+      ids: purchaseIds
+    });
+    const result = await saveItemsToServer({ mutation: mutation, force: force });
 
     if (isOkResult(result)) {
       applySaveSuccess(result);
@@ -740,12 +996,12 @@ async function commitModeAndExit(successMessage, force = false) {
       return;
     }
 
-    throw new Error(result && result.message ? result.message : "保存に失敗しました");
+    throw createSaveError(result, "保存に失敗しました", "S01");
   } catch (error) {
     console.error(error);
     setModeSaving(false);
     pendingUpdateAction = () => commitModeAndExit(successMessage, force);
-    openUpdateRetryModal();
+    openUpdateRetryModal(error && error.code ? error.code : "N01");
   }
 }
 
@@ -1129,7 +1385,8 @@ function createCategoryHeading(category) {
     <button
       class="category-heading-button"
       type="button"
-      onclick="toggleCategoryCollapse('${category || "other"}')"
+      data-action="toggle-category-collapse"
+      data-category="${category || "other"}"
       aria-label="${getCategoryName(category || "other")}の表示切り替え"
     >
       <span>${getCategoryName(category || "other")}</span>
@@ -1185,13 +1442,12 @@ function createItemRow(item) {
       ontouchmove="moveItemTouch(event)"
       ontouchend="endItemTouch(event, '${item.id}')"
       ontouchcancel="cancelItemTouch()"
-      onclick="handleItemTap(event, '${item.id}')"
     >
       <div class="swipe-actions">
-        <button class="swipe-action-button delete" onclick="deleteSwipedItem(event, '${item.id}')" aria-label="日用品を削除">
+        <button class="swipe-action-button delete" data-action="delete-swiped-item" data-item-id="${item.id}" aria-label="日用品を削除">
           ${createTrashIcon("swipe-action-icon")}
         </button>
-        <button class="swipe-action-button edit" onclick="editSwipedItem(event, '${item.id}')" aria-label="日用品を編集">
+        <button class="swipe-action-button edit" data-action="edit-swiped-item" data-item-id="${item.id}" aria-label="日用品を編集">
           ${createPencilIcon("swipe-action-icon")}
         </button>
       </div>
@@ -1245,7 +1501,8 @@ function createShoppingCheckHtml(item, index) {
       class="shopping-check-button ${checked ? "checked" : "unchecked"}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      onclick="event.stopPropagation(); toggleSpare(${index})"
+      data-action="toggle-spare"
+      data-index="${index}"
       aria-label="${checked ? "購入済み" : "未購入"}"
     >
       <span class="shopping-checkbox" aria-hidden="true">
@@ -1267,7 +1524,8 @@ function createStockToggleHtml(item, index) {
       class="spare-badge ${className}"
       type="button"
       ${isModeSaving || isReordering ? "disabled" : ""}
-      onclick="event.stopPropagation(); toggleSpare(${index})"
+      data-action="toggle-spare"
+      data-index="${index}"
       aria-label="${label}"
     >
       <span class="stock-toggle-track">
@@ -1789,13 +2047,18 @@ function applyFinalVisibleOrderToSnapshot(category, startVisibleIds, finalVisibl
 function finishReorder() {
   if (!isReordering) return;
 
+  const categoryForSave = reorderCategory || "other";
   const shouldSave = finalizeReorderFromSnapshot();
+  const ordersForSave = shouldSave ? getOrderPayloadForCategory(categoryForSave) : [];
 
   cleanupReorder();
   render();
 
   if (shouldSave) {
-    saveImmediateChange();
+    saveImmediateChange(buildSaveMutation("updateOrder", {
+      category: categoryForSave,
+      orders: ordersForSave
+    }));
   }
 
   setTimeout(() => {
@@ -1916,7 +2179,10 @@ function toggleSpare(index) {
   if (shoppingMode) {
     render();
   } else {
-    saveImmediateChange();
+    saveImmediateChange(buildSaveMutation("updateSpare", {
+      id: items[index].id,
+      hasSpare: items[index].hasSpare
+    }));
     render();
   }
 }
@@ -2205,10 +2471,8 @@ function renderCategoryPicker() {
       <span>${category.name}</span>
       ${modalCategory === category.key ? createCheckSvg() : ""}
     `;
-    button.onclick = event => {
-      event.stopPropagation();
-      setModalCategory(category.key);
-    };
+    button.dataset.action = "select-category";
+    button.dataset.category = category.key;
 
     menu.appendChild(button);
   });
@@ -2234,10 +2498,8 @@ function renderOwnerPicker() {
       <span>${owner.name}</span>
       ${modalIcon === owner.key ? createCheckSvg() : ""}
     `;
-    button.onclick = event => {
-      event.stopPropagation();
-      setModalIcon(owner.key);
-    };
+    button.dataset.action = "select-owner";
+    button.dataset.owner = owner.key;
 
     menu.appendChild(button);
   });
@@ -2257,17 +2519,28 @@ function confirmItemModal() {
   if (!name) return;
 
   let addedItemId = null;
+  let mutation = null;
 
   if (modalMode === "add") {
     addedItemId = addItemFromModal(name, note);
+    const addedItem = items.find(item => item.id === addedItemId);
+    mutation = buildSaveMutation("addItem", {
+      item: addedItem
+    });
   }
 
   if (modalMode === "edit") {
-    updateItemFromModal(name, note);
+    const updatedItem = updateItemFromModal(name, note);
+    mutation = buildSaveMutation("updateItem", {
+      item: updatedItem
+    });
   }
 
   closeItemModal();
-  saveImmediateChange();
+
+  if (mutation) {
+    saveImmediateChange(mutation);
+  }
 
   if (addedItemId) {
     revealAddedItem(addedItemId);
@@ -2294,13 +2567,17 @@ function addItemFromModal(name, note) {
 }
 
 function updateItemFromModal(name, note) {
+  let updatedItem = null;
+  let oldCategoryForNormalize = null;
+
   items = items.map(item => {
     if (item.id === editingItemId) {
       const oldCategory = item.category || "other";
       const newCategory = modalCategory || "other";
       const categoryChanged = oldCategory !== newCategory;
 
-      return {
+      oldCategoryForNormalize = oldCategory;
+      updatedItem = {
         ...item,
         name: name,
         note: note,
@@ -2308,12 +2585,20 @@ function updateItemFromModal(name, note) {
         category: newCategory,
         categoryOrder: categoryChanged ? getNextCategoryOrder(newCategory) : item.categoryOrder
       };
+
+      return updatedItem;
     }
 
     return item;
   });
 
+  if (oldCategoryForNormalize) {
+    normalizeCategoryOrderFor(oldCategoryForNormalize);
+  }
   normalizeCategoryOrderFor(modalCategory || "other");
+
+  updatedItem = items.find(item => item.id === editingItemId) || updatedItem;
+  return updatedItem;
 }
 
 // ========================================
@@ -2342,15 +2627,19 @@ function closeDeleteConfirm() {
 function confirmDeleteItem() {
   if (isModeSaving || !deletingItemId) return;
 
-  const deletedItem = items.find(item => item.id === deletingItemId);
+  const deletedId = deletingItemId;
+  const deletedItem = items.find(item => item.id === deletedId);
   const deletedCategory = deletedItem ? deletedItem.category || "other" : "other";
 
-  items = items.filter(item => item.id !== deletingItemId);
+  items = items.filter(item => item.id !== deletedId);
   deletingItemId = null;
   normalizeCategoryOrderFor(deletedCategory);
 
   document.getElementById("deleteConfirmModal").classList.remove("show");
-  saveImmediateChange();
+  saveImmediateChange(buildSaveMutation("deleteItem", {
+    id: deletedId,
+    category: deletedCategory
+  }));
   render();
 }
 
@@ -2407,37 +2696,6 @@ function confirmHomeCancel() {
   exitModeWithoutSaving();
 }
 
-function formatSaveDebugMessage() {
-  const lines = [];
-  const save = lastSaveDebug || {};
-  const jsonp = lastJsonpDebug || {};
-
-  lines.push("");
-  lines.push("--- 診断情報 ---");
-  lines.push("appVersion: " + (save.appVersion || APP_VERSION));
-  lines.push("action: " + (save.action || jsonp.action || ""));
-  lines.push("baseVersion: " + (save.baseVersion || ""));
-  lines.push("serverVersion: " + String(serverVersion || 0));
-  lines.push("force: " + (save.force || ""));
-  lines.push("itemCount: " + (save.itemCount || String(items.length)));
-  lines.push("payloadLength: " + (save.payloadLength || String(lastSavePayloadLength || 0)));
-  lines.push("urlLength: " + (jsonp.urlLength !== undefined ? String(jsonp.urlLength) : ""));
-  lines.push("jsonpResult: " + (jsonp.result || ""));
-  lines.push("responseStatus: " + (save.responseStatus || jsonp.status || ""));
-  lines.push("responseVersion: " + (save.responseVersion || jsonp.version || ""));
-
-  const message = save.responseMessage || jsonp.message || save.errorMessage || "";
-  if (message) {
-    lines.push("message: " + message);
-  }
-
-  if (save.errorName || save.errorMessage) {
-    lines.push("error: " + [save.errorName, save.errorMessage].filter(Boolean).join(" / "));
-  }
-
-  return lines.join("\n");
-}
-
 function getUpdateRetryMessage() {
   let message = "サーバーへの更新に失敗しました。\n画面上の変更はまだ保存されていません。";
 
@@ -2445,18 +2703,23 @@ function getUpdateRetryMessage() {
     message += "\nデータ量が多くなっている可能性があります。";
   }
 
-  message += formatSaveDebugMessage();
-
   return message;
 }
 
-function openUpdateRetryModal() {
+function openUpdateRetryModal(errorCode) {
   hideToast();
   resetPullRefreshVisual();
 
   const message = document.getElementById("updateRetryMessage");
   if (message) {
-    message.textContent = getUpdateRetryMessage();
+    let text = getUpdateRetryMessage();
+    if (errorCode) {
+      text += "\nエラーコード：" + errorCode;
+    }
+    if (pendingUpdateAction && pendingUpdateAction._actionName) {
+      text += "\n処理：" + pendingUpdateAction._actionName;
+    }
+    message.textContent = text;
   }
 
   document.getElementById("updateRetryModal").classList.add("show");
@@ -2627,6 +2890,7 @@ document.addEventListener("click", event => {
   if (event.target.closest("#loadFailureModal")) return;
 
   if (event.target.closest("#toast")) return;
+  if (event.target.closest("[data-action]")) return;
 
   hideToast();
 
@@ -2635,6 +2899,7 @@ document.addEventListener("click", event => {
   }
 });
 
+setupSafeActionHandlers();
 setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
