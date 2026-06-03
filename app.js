@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.4";
+const APP_VERSION = "2.0.5";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -15,6 +15,7 @@ const SWIPE_OPEN_THRESHOLD = 32;
 const SWIPE_CLOSE_THRESHOLD = 24;
 const BUTTON_TAP_MOVE_CANCEL_DISTANCE = 12;
 const SPARE_SAVE_DEBOUNCE_MS = 800;
+const SAVE_TIMEOUT_MS = 15000;
 
 const REORDER_HOLD_MS = 520;
 const COPY_FEEDBACK_MS = 1400;
@@ -175,6 +176,7 @@ function getActionEventProxy(event) {
 function executeSafeAction(element, event) {
   if (!element || isActionElementDisabled(element)) return;
   if (isConflictReloading && !element.closest("#conflictModal")) return;
+  if (isRefreshing && !element.closest(".modal")) return;
 
   const action = element.dataset.action;
   const safeEvent = getActionEventProxy(event);
@@ -453,7 +455,7 @@ function hasModeChanges() {
 }
 
 function setOwnerTab(tabKey) {
-  if (isModeSaving || isReordering) return;
+  if (isModeSaving || isReordering || isRefreshing) return;
   if (closeSwipedItemIfOpen()) return;
   activeOwnerTab = tabKey;
   closeSwipedItemWithoutRender();
@@ -498,7 +500,7 @@ function renderOwnerTabs() {
     button.className = `owner-tab ${stockClass} ${isActive ? "active" : ""}`;
     button.textContent = isActive ? tab.full : tab.short;
     button.setAttribute("aria-label", tab.full);
-    button.disabled = isModeSaving || isReordering;
+    button.disabled = isModeSaving || isReordering || isRefreshing;
     button.dataset.action = "set-owner-tab";
     button.dataset.owner = tab.key;
 
@@ -626,7 +628,7 @@ function getNextCategoryOrder(category) {
 }
 
 function toggleCategoryCollapse(category) {
-  if (isModeSaving || isReordering) return;
+  if (isModeSaving || isReordering || isRefreshing) return;
   if (closeSwipedItemIfOpen()) return;
 
   const key = category || "other";
@@ -653,20 +655,20 @@ function updateActionButtons() {
   const hasChanges = hasModeChanges();
 
   if (cancelButton) {
-    cancelButton.disabled = isModeSaving || isReordering;
+    cancelButton.disabled = isModeSaving || isReordering || isRefreshing;
   }
 
   if (addButton) {
-    addButton.disabled = isModeSaving || isReordering;
+    addButton.disabled = isModeSaving || isReordering || isRefreshing;
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering || getShoppingCopyItems().length === 0;
+    copyButton.disabled = isModeSaving || isReordering || isRefreshing || getShoppingCopyItems().length === 0;
   }
 
   if (purchaseCompleteButton) {
     const isSavingThisButton = isModeSaving && shoppingMode;
-    purchaseCompleteButton.disabled = isModeSaving || !hasChanges;
+    purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasChanges;
     purchaseCompleteButton.classList.toggle("saving", isSavingThisButton);
     purchaseCompleteButton.innerHTML = isSavingThisButton ? getSavingButtonHtml() : "購入確定";
   }
@@ -713,7 +715,7 @@ function resetModesAndSelections() {
 }
 
 function isBlockingModalOpen() {
-  return isLoadFailureModalOpen || isConflictReloading;
+  return isLoadFailureModalOpen || isConflictReloading || isRefreshing;
 }
 
 function applyLoadedItemsResponse(response) {
@@ -745,6 +747,7 @@ function loadItems(options = {}) {
   if (fromPull) {
     isRefreshing = true;
     pullDistance = REFRESH_OFFSET;
+    updateActionButtons();
     updateRefreshIndicator();
     updatePullRefreshVisual();
   }
@@ -794,6 +797,35 @@ function requestJsonp(params) {
   return new Promise((resolve, reject) => {
     const callbackName = "jsonpCallback_" + Date.now() + "_" + Math.random().toString(36).slice(2);
     const script = document.createElement("script");
+    let settled = false;
+    let timeoutId = null;
+
+    function cleanup() {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      delete window[callbackName];
+      if (script.parentNode) {
+        script.remove();
+      }
+    }
+
+    function settleSuccess(response) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(response);
+    }
+
+    function settleError(message, code) {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      const error = new Error(message || "通信に失敗しました");
+      error.code = code || "N01";
+      reject(error);
+    }
 
     const query = new URLSearchParams();
     query.set("callback", callbackName);
@@ -803,16 +835,16 @@ function requestJsonp(params) {
     });
 
     window[callbackName] = function(response) {
-      delete window[callbackName];
-      script.remove();
-      resolve(response);
+      settleSuccess(response);
     };
 
     script.onerror = function() {
-      delete window[callbackName];
-      script.remove();
-      reject(new Error("通信に失敗しました"));
+      settleError("通信に失敗しました", "N01");
     };
+
+    timeoutId = setTimeout(() => {
+      settleError("保存がタイムアウトしました", "N02");
+    }, SAVE_TIMEOUT_MS);
 
     script.src = WEB_APP_URL + "?" + query.toString();
     document.body.appendChild(script);
@@ -917,6 +949,7 @@ function applySaveSuccess(result) {
 
 function hasPendingSaveWork() {
   return isImmediateSaveRunning ||
+    immediateSaveQueued ||
     immediateSaveQueue.length > 0 ||
     !!spareSaveTimer ||
     pendingSpareChanges.size > 0 ||
@@ -977,7 +1010,7 @@ async function flushSpareChanges(force = false) {
     if (spareBatchSavePromise) {
       await spareBatchSavePromise;
     }
-    return;
+    return pendingSpareChanges.size === 0;
   }
 
   if (spareSaveTimer) {
@@ -987,7 +1020,7 @@ async function flushSpareChanges(force = false) {
 
   if (pendingSpareChanges.size === 0) {
     updateSaveStatusIndicator();
-    return;
+    return true;
   }
 
   const changes = buildSpareChangesPayload(pendingSpareChanges);
@@ -995,6 +1028,7 @@ async function flushSpareChanges(force = false) {
   isSpareBatchSaveRunning = true;
   const spareBatchDeferred = createDeferredPromise();
   spareBatchSavePromise = spareBatchDeferred.promise;
+  let completedNormally = false;
   updateSaveStatusIndicator();
 
   try {
@@ -1002,25 +1036,30 @@ async function flushSpareChanges(force = false) {
 
     if (isOkResult(result)) {
       applySaveSuccess(result);
-    } else if (isConflictResult(result)) {
+      completedNormally = true;
+      return true;
+    }
+
+    if (isConflictResult(result)) {
       pendingConflictAction = () => saveSpareChangesFromPendingAction(changes, true);
       pendingConflictAction._actionName = "updateSpares";
       openConflictModal();
-      return;
-    } else {
-      throw createSaveError(result, "保存に失敗しました", "S01");
+      return false;
     }
+
+    throw createSaveError(result, "保存に失敗しました", "S01");
   } catch (error) {
     console.error(error);
     pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
     pendingUpdateAction._actionName = "updateSpares";
     openUpdateRetryModal(error && error.code ? error.code : "N01");
+    return false;
   } finally {
     isSpareBatchSaveRunning = false;
     spareBatchSavePromise = null;
-    spareBatchDeferred.resolve();
+    spareBatchDeferred.resolve(completedNormally);
 
-    if (pendingSpareChanges.size > 0 && !spareSaveTimer) {
+    if (completedNormally && pendingSpareChanges.size > 0 && !spareSaveTimer) {
       spareSaveTimer = setTimeout(() => {
         spareSaveTimer = null;
         flushSpareChanges();
@@ -1098,7 +1137,10 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   }
 
   if (pendingSpareChanges.size > 0 || spareSaveTimer) {
-    await flushSpareChanges();
+    const spareFlushSucceeded = await flushSpareChanges();
+    if (spareFlushSucceeded === false) {
+      return;
+    }
   }
 
   if (isImmediateSaveRunning) {
@@ -1124,6 +1166,8 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
       if (isOkResult(result)) {
         applySaveSuccess(result);
       } else if (isConflictResult(result)) {
+        immediateSaveQueue = [];
+        immediateSaveQueued = false;
         pendingConflictAction = () => saveImmediateChange(mutation, true);
         pendingConflictAction._actionName = getMutationActionName(mutation);
         openConflictModal();
@@ -1385,15 +1429,15 @@ function updateAppModeClasses() {
   }
 
   if (cancelButton) {
-    cancelButton.disabled = isModeSaving || isReordering;
+    cancelButton.disabled = isModeSaving || isReordering || isRefreshing;
   }
 
   if (addButton) {
-    addButton.disabled = isModeSaving || isReordering;
+    addButton.disabled = isModeSaving || isReordering || isRefreshing;
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering || getShoppingCopyItems().length === 0;
+    copyButton.disabled = isModeSaving || isReordering || isRefreshing || getShoppingCopyItems().length === 0;
   }
 
   if (appTitle) {
@@ -1545,6 +1589,7 @@ function finishPullRefresh() {
     setTimeout(() => {
       isRefreshing = false;
       resetPullRefreshVisual();
+      updateActionButtons();
     }, 350);
   });
 }
@@ -2936,9 +2981,6 @@ function openUpdateRetryModal(errorCode) {
     let text = getUpdateRetryMessage();
     if (errorCode) {
       text += "\nエラーコード：" + errorCode;
-    }
-    if (pendingUpdateAction && pendingUpdateAction._actionName) {
-      text += "\n処理：" + pendingUpdateAction._actionName;
     }
     message.textContent = text;
   }
