@@ -15,9 +15,9 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver1.0.19</div>
+      <div class="startup-version" id="startupVersion">ver2.0.0</div>
       <div class="startup-message" id="startupMessage"></div>
-      <button class="startup-start-button" id="startupStartButton" onclick="startFromTitleScreen()">スタート</button>
+      <button class="startup-start-button" id="startupStartButton" data-action="start-title">スタート</button>
     </div>
     <div class="startup-toast" id="startupToast">起動中…</div>
   </div>
@@ -25,7 +25,7 @@
   <div class="app" id="app">
     <div class="header">
       <div class="title-row">
-        <button class="shopping-button" onclick="toggleShoppingMode()" aria-label="買い物リスト">
+        <button class="shopping-button" data-action="toggle-shopping" aria-label="買い物リスト">
           <span>買い物</span>
           <svg class="shopping-switch-icon" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M5 2.5L2.8 4.7L5 6.9"></path>
@@ -34,19 +34,19 @@
             <path d="M13.1 11.3H5.2C3.9 11.3 2.9 10.3 2.9 9"></path>
           </svg>
         </button>
-        <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" onclick="openHomeCancelConfirm()" aria-label="買い物をキャンセル">キャンセル</button>
+        <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" data-action="open-home-cancel" aria-label="買い物をキャンセル">キャンセル</button>
 
         <div class="title-center">
           <h1 id="appTitle">日用品リスト</h1>
         </div>
 
-        <button class="add-top-button icon-top-button" onclick="openAddModal()" aria-label="日用品を追加">
+        <button class="add-top-button icon-top-button" data-action="open-add" aria-label="日用品を追加">
           <svg class="top-button-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 5V19"></path>
             <path d="M5 12H19"></path>
           </svg>
         </button>
-        <button class="shopping-copy-button icon-top-button" id="shoppingCopyButton" onclick="copyShoppingList(event)" aria-label="購入リストをコピー">
+        <button class="shopping-copy-button icon-top-button" id="shoppingCopyButton" data-action="copy-shopping" aria-label="購入リストをコピー">
           <svg class="top-button-icon copy-icon" viewBox="0 0 24 24" aria-hidden="true">
             <rect x="5.5" y="8.5" width="10.5" height="10.5" rx="2"></rect>
             <path d="M9 5.5H17.5C18.6 5.5 19.5 6.4 19.5 7.5V16"></path>
@@ -63,17 +63,17 @@
     <div id="items"></div>
 
     <div class="footer">
-      <button class="purchase-complete-button" id="purchaseCompleteButton" onclick="openPurchaseConfirm()" aria-label="購入確定" disabled>購入確定</button>
+      <button class="purchase-complete-button" id="purchaseCompleteButton" data-action="open-purchase-confirm" aria-label="購入確定" disabled>購入確定</button>
     </div>
   </div>
 
-  <div class="toast" id="toast" onclick="hideToast()"></div>
+  <div class="toast" id="toast" data-action="hide-toast"></div>
 
   <div class="modal-backdrop" id="itemModal">
     <div class="modal item-page-modal">
       <div class="item-page-header">
         <div class="item-page-title-row">
-          <button class="item-page-cancel-button" onclick="closeItemModal()">キャンセル</button>
+          <button class="item-page-cancel-button" data-action="close-item-modal">キャンセル</button>
           <div class="item-page-title-center">
             <div class="item-page-title" id="itemModalTitle">日用品を追加</div>
           </div>
@@ -97,7 +97,7 @@
             <div class="field">
               <label>分類</label>
               <div class="picker" id="categoryPicker">
-                <button class="picker-button" type="button" onclick="toggleCategoryPicker(event)">
+                <button class="picker-button" type="button" data-action="toggle-category-picker">
                   <span id="modalCategoryLabel">その他</span>
                   <span class="picker-arrow" aria-hidden="true"></span>
                 </button>
@@ -108,7 +108,7 @@
             <div class="field">
               <label>使用者</label>
               <div class="picker" id="ownerPicker">
-                <button class="picker-button" type="button" onclick="toggleOwnerPicker(event)">
+                <button class="picker-button" type="button" data-action="toggle-owner-picker">
                   <span id="modalOwnerLabel">共同</span>
                   <span class="picker-arrow" aria-hidden="true"></span>
                 </button>
@@ -118,7 +118,7 @@
           </div>
 
           <div class="item-page-bottom-actions">
-            <button class="item-page-save-bottom-button" id="modalConfirm" onclick="confirmItemModal()" disabled>決定</button>
+            <button class="item-page-save-bottom-button" id="modalConfirm" data-action="confirm-item-modal" disabled>決定</button>
           </div>
         </div>
       </div>
@@ -130,8 +130,8 @@
       <h2>削除確認</h2>
       <div class="confirm-message" id="deleteConfirmMessage">この日用品を削除しますか？</div>
       <div class="modal-actions delete-actions">
-        <button class="cancel-button" onclick="closeDeleteConfirm()">いいえ</button>
-        <button class="confirm-button danger" onclick="confirmDeleteItem()">はい</button>
+        <button class="cancel-button" data-action="close-delete-confirm">いいえ</button>
+        <button class="confirm-button danger" data-action="confirm-delete-item">はい</button>
       </div>
     </div>
   </div>
@@ -141,8 +141,8 @@
       <h2>購入確認</h2>
       <div class="confirm-message">購入を完了しますか？</div>
       <div class="modal-actions">
-        <button class="cancel-button" onclick="closePurchaseConfirm()">いいえ</button>
-        <button class="confirm-button shopping" onclick="confirmPurchaseComplete()">はい</button>
+        <button class="cancel-button" data-action="close-purchase-confirm">いいえ</button>
+        <button class="confirm-button shopping" data-action="confirm-purchase-complete">はい</button>
       </div>
     </div>
   </div>
@@ -152,8 +152,8 @@
       <h2>確認</h2>
       <div class="confirm-message" id="homeCancelConfirmMessage">購入をキャンセルしますか？</div>
       <div class="modal-actions">
-        <button class="cancel-button" onclick="closeHomeCancelConfirm()">いいえ</button>
-        <button class="confirm-button" onclick="confirmHomeCancel()">はい</button>
+        <button class="cancel-button" data-action="close-home-cancel-confirm">いいえ</button>
+        <button class="confirm-button" data-action="confirm-home-cancel">はい</button>
       </div>
     </div>
   </div>
@@ -164,8 +164,8 @@
       <div class="confirm-message" id="updateRetryMessage">サーバーへの更新に失敗しました。
 画面上の変更はまだ保存されていません。</div>
       <div class="modal-actions retry-actions">
-        <button class="cancel-button" onclick="cancelPendingUpdate()">更新をキャンセル</button>
-        <button class="confirm-button" onclick="retryPendingUpdate()">再試行</button>
+        <button class="cancel-button" data-action="cancel-pending-update">更新をキャンセル</button>
+        <button class="confirm-button" data-action="retry-pending-update">再試行</button>
       </div>
     </div>
   </div>
@@ -175,8 +175,8 @@
       <h2 id="conflictTitle">更新確認</h2>
       <div class="confirm-message" id="conflictMessage">他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。</div>
       <div class="modal-actions conflict-actions" id="conflictActions">
-        <button class="cancel-button" onclick="loadLatestFromConflict()">更新をキャンセル</button>
-        <button class="confirm-button" onclick="forcePendingConflictSave()">更新する</button>
+        <button class="cancel-button" data-action="load-latest-conflict">更新をキャンセル</button>
+        <button class="confirm-button" data-action="force-pending-conflict">更新する</button>
       </div>
     </div>
   </div>
@@ -186,8 +186,8 @@
       <h2>読み込み失敗</h2>
       <div class="confirm-message" id="loadFailureMessage">リストを読み込めませんでした。</div>
       <div class="modal-actions load-failure-actions">
-        <button class="cancel-button" onclick="returnToTitleFromLoadFailure()">タイトルに戻る</button>
-        <button class="confirm-button" onclick="retryLoadFromFailure()">再読み込み</button>
+        <button class="cancel-button" data-action="return-title-load-failure">タイトルに戻る</button>
+        <button class="confirm-button" data-action="retry-load-failure">再読み込み</button>
       </div>
     </div>
   </div>
