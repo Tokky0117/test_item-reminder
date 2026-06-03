@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.1";
+const APP_VERSION = "2.0.2";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -106,6 +106,7 @@ let serverVersion = 0;
 
 let isImmediateSaveRunning = false;
 let immediateSaveQueued = false;
+let immediateSaveQueue = [];
 let isModeSaving = false;
 
 let isRefreshing = false;
@@ -117,6 +118,7 @@ let pullDistance = 0;
 let isPulling = false;
 
 let isLoadFailureModalOpen = false;
+let isConflictReloading = false;
 let lastSavePayloadLength = 0;
 
 let safeActionTouch = null;
@@ -167,6 +169,7 @@ function getActionEventProxy(event) {
 
 function executeSafeAction(element, event) {
   if (!element || isActionElementDisabled(element)) return;
+  if (isConflictReloading && !element.closest("#conflictModal")) return;
 
   const action = element.dataset.action;
   const safeEvent = getActionEventProxy(event);
@@ -703,7 +706,7 @@ function resetModesAndSelections() {
 }
 
 function isBlockingModalOpen() {
-  return isLoadFailureModalOpen;
+  return isLoadFailureModalOpen || isConflictReloading;
 }
 
 function applyLoadedItemsResponse(response) {
@@ -898,8 +901,21 @@ function isOkResult(result) {
 
 function applySaveSuccess(result) {
   if (result && result.version !== undefined) {
-    serverVersion = Number(result.version) || serverVersion;
+    const nextVersion = Number(result.version);
+    if (Number.isFinite(nextVersion) && nextVersion > 0) {
+      serverVersion = nextVersion;
+    }
   }
+}
+
+function getMutationActionName(mutation) {
+  return mutation && mutation.action ? String(mutation.action) : "saveAll";
+}
+
+function createPendingUpdateAction(mutation, force) {
+  const action = () => saveImmediateChange(mutation, force);
+  action._actionName = getMutationActionName(mutation);
+  return action;
 }
 
 function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
@@ -918,10 +934,13 @@ function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
 
 async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
-  let force = args.force;
-  const mutation = args.mutation;
+  const firstRequest = {
+    mutation: args.mutation,
+    force: args.force
+  };
 
   if (isImmediateSaveRunning) {
+    immediateSaveQueue.push(firstRequest);
     immediateSaveQueued = true;
     return;
   }
@@ -929,32 +948,40 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   isImmediateSaveRunning = true;
 
   try {
-    while (true) {
-      immediateSaveQueued = false;
+    let currentRequest = firstRequest;
 
+    while (currentRequest) {
+      immediateSaveQueued = immediateSaveQueue.length > 0;
+
+      const mutation = currentRequest.mutation;
+      const force = currentRequest.force === true;
       const result = await saveItemsToServer({ mutation: mutation, force: force });
-      force = false;
 
       if (isOkResult(result)) {
         applySaveSuccess(result);
       } else if (isConflictResult(result)) {
         pendingConflictAction = () => saveImmediateChange(mutation, true);
+        pendingConflictAction._actionName = getMutationActionName(mutation);
         openConflictModal();
         return;
       } else {
         throw createSaveError(result, "保存に失敗しました", "S01");
       }
 
-      if (!immediateSaveQueued) {
-        break;
-      }
+      currentRequest = immediateSaveQueue.shift() || null;
     }
   } catch (error) {
     console.error(error);
-    pendingUpdateAction = () => saveImmediateChange(mutation, force);
+    immediateSaveQueue = [];
+    immediateSaveQueued = false;
+    pendingUpdateAction = createPendingUpdateAction(
+      (typeof currentRequest !== "undefined" && currentRequest && currentRequest.mutation) ? currentRequest.mutation : firstRequest.mutation,
+      (typeof currentRequest !== "undefined" && currentRequest && currentRequest.force === true) || firstRequest.force === true
+    );
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isImmediateSaveRunning = false;
+    immediateSaveQueued = immediateSaveQueue.length > 0;
   }
 }
 
@@ -1132,14 +1159,41 @@ function scrollToPendingFocusItem() {
   const targetId = pendingFocusItemId;
   pendingFocusItemId = null;
 
-  const rows = Array.from(document.querySelectorAll(".row[data-item-id]"));
+  const container = document.getElementById("items");
+  if (!container) return;
+
+  const rows = Array.from(container.querySelectorAll(".row[data-item-id]"));
   const target = rows.find(row => row.dataset.itemId === targetId);
 
   if (!target) return;
 
-  target.scrollIntoView({
-    behavior: "smooth",
-    block: "center"
+  resetPullRefreshVisual();
+
+  requestAnimationFrame(() => {
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const currentTop = container.scrollTop;
+    const targetTop =
+      currentTop +
+      (targetRect.top - containerRect.top) -
+      (container.clientHeight / 2) +
+      (target.offsetHeight / 2);
+
+    const maxTop = Math.max(container.scrollHeight - container.clientHeight, 0);
+    const nextTop = Math.min(Math.max(targetTop, 0), maxTop);
+
+    container.scrollTo({
+      top: nextTop,
+      behavior: "smooth"
+    });
+
+    setTimeout(() => {
+      resetPullRefreshVisual();
+      if (document.scrollingElement) {
+        document.scrollingElement.scrollTop = 0;
+      }
+      window.scrollTo(0, 0);
+    }, 520);
   });
 }
 
@@ -1552,7 +1606,7 @@ function createItemContentHtml(item, index) {
 }
 
 function startItemTouch(event, id) {
-  if (shoppingMode || isModeSaving || isReordering) return;
+  if (shoppingMode || isModeSaving || isReordering || isBlockingModalOpen()) return;
   if (!event.touches || event.touches.length !== 1) return;
 
   if (swipedItemId && swipedItemId !== id) {
@@ -2110,6 +2164,11 @@ function clamp(value, min, max) {
 }
 
 function handleItemTap(event, id) {
+  if (isBlockingModalOpen()) {
+    event.stopPropagation();
+    return;
+  }
+
   if (suppressNextTap) {
     event.stopPropagation();
     return;
@@ -2164,7 +2223,7 @@ function deleteSwipedItem(event, id) {
 }
 
 function toggleSpare(index) {
-  if (isModeSaving || isReordering || suppressNextTap) return;
+  if (isModeSaving || isReordering || suppressNextTap || isBlockingModalOpen()) return;
 
   if (swipedItemId) {
     closeSwipedItem();
@@ -2760,6 +2819,7 @@ async function cancelPendingUpdate() {
 }
 
 function setConflictModalLoading(isLoading) {
+  isConflictReloading = isLoading === true;
   const title = document.getElementById("conflictTitle");
   const message = document.getElementById("conflictMessage");
   const actions = document.getElementById("conflictActions");
