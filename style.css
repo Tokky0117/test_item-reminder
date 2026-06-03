@@ -983,6 +983,21 @@ h1,
   transition: background 0.72s ease, box-shadow 0.24s ease;
 }
 
+.save-status {
+  min-height: 20px;
+  margin-left: auto;
+  color: #777;
+  font-size: 13px;
+  font-weight: 600;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  white-space: nowrap;
+}
+
+.save-status.visible {
+  opacity: 1;
+}
+
 .purchase-complete-button {
   display: none;
   height: 48px;
@@ -1028,6 +1043,10 @@ h1,
   box-shadow: none;
   justify-content: center;
   padding: 8px 14px calc(18px + env(safe-area-inset-bottom));
+}
+
+.app.shopping-mode .save-status {
+  display: none;
 }
 
 .app.shopping-mode .purchase-complete-button {
