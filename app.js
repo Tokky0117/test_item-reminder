@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.2";
+const APP_VERSION = "2.0.3";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -14,6 +14,7 @@ const SWIPE_ACTION_WIDTH = 124;
 const SWIPE_OPEN_THRESHOLD = 32;
 const SWIPE_CLOSE_THRESHOLD = 24;
 const BUTTON_TAP_MOVE_CANCEL_DISTANCE = 12;
+const SPARE_SAVE_DEBOUNCE_MS = 800;
 
 const REORDER_HOLD_MS = 520;
 const COPY_FEEDBACK_MS = 1400;
@@ -107,6 +108,9 @@ let serverVersion = 0;
 let isImmediateSaveRunning = false;
 let immediateSaveQueued = false;
 let immediateSaveQueue = [];
+let pendingSpareChanges = new Map();
+let spareSaveTimer = null;
+let isSpareBatchSaveRunning = false;
 let isModeSaving = false;
 
 let isRefreshing = false;
@@ -665,6 +669,8 @@ function updateActionButtons() {
     purchaseCompleteButton.classList.toggle("saving", isSavingThisButton);
     purchaseCompleteButton.innerHTML = isSavingThisButton ? getSavingButtonHtml() : "購入確定";
   }
+
+  updateSaveStatusIndicator();
 }
 
 function setModeSaving(saving) {
@@ -908,6 +914,134 @@ function applySaveSuccess(result) {
   }
 }
 
+function hasPendingSaveWork() {
+  return isImmediateSaveRunning ||
+    immediateSaveQueue.length > 0 ||
+    !!spareSaveTimer ||
+    pendingSpareChanges.size > 0 ||
+    isSpareBatchSaveRunning;
+}
+
+function updateSaveStatusIndicator() {
+  const saveStatus = document.getElementById("saveStatus");
+  if (!saveStatus) return;
+
+  const visible = !shoppingMode && hasPendingSaveWork();
+  saveStatus.textContent = visible ? "保存中…" : "";
+  saveStatus.classList.toggle("visible", visible);
+}
+
+function buildSpareChangesPayload(changesMap) {
+  return Array.from(changesMap.entries()).map(([id, hasSpare]) => ({
+    i: id,
+    s: hasSpare === true
+  }));
+}
+
+function scheduleSpareSave(id, hasSpare) {
+  pendingSpareChanges.set(String(id), hasSpare === true);
+
+  if (spareSaveTimer) {
+    clearTimeout(spareSaveTimer);
+  }
+
+  spareSaveTimer = setTimeout(() => {
+    spareSaveTimer = null;
+    flushSpareChanges();
+  }, SPARE_SAVE_DEBOUNCE_MS);
+
+  updateSaveStatusIndicator();
+}
+
+async function saveSpareChanges(changes, force = false) {
+  const mutation = buildSaveMutation("updateSpares", {
+    changes: changes
+  });
+
+  return saveItemsToServer({ mutation: mutation, force: force });
+}
+
+async function flushSpareChanges(force = false) {
+  if (isSpareBatchSaveRunning) return;
+
+  if (spareSaveTimer) {
+    clearTimeout(spareSaveTimer);
+    spareSaveTimer = null;
+  }
+
+  if (pendingSpareChanges.size === 0) {
+    updateSaveStatusIndicator();
+    return;
+  }
+
+  const changes = buildSpareChangesPayload(pendingSpareChanges);
+  pendingSpareChanges.clear();
+  isSpareBatchSaveRunning = true;
+  updateSaveStatusIndicator();
+
+  try {
+    const result = await saveSpareChanges(changes, force);
+
+    if (isOkResult(result)) {
+      applySaveSuccess(result);
+    } else if (isConflictResult(result)) {
+      pendingConflictAction = () => saveSpareChangesFromPendingAction(changes, true);
+      pendingConflictAction._actionName = "updateSpares";
+      openConflictModal();
+      return;
+    } else {
+      throw createSaveError(result, "保存に失敗しました", "S01");
+    }
+  } catch (error) {
+    console.error(error);
+    pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
+    pendingUpdateAction._actionName = "updateSpares";
+    openUpdateRetryModal(error && error.code ? error.code : "N01");
+  } finally {
+    isSpareBatchSaveRunning = false;
+
+    if (pendingSpareChanges.size > 0 && !spareSaveTimer) {
+      spareSaveTimer = setTimeout(() => {
+        spareSaveTimer = null;
+        flushSpareChanges();
+      }, SPARE_SAVE_DEBOUNCE_MS);
+    }
+
+    updateSaveStatusIndicator();
+  }
+}
+
+async function saveSpareChangesFromPendingAction(changes, force = false) {
+  isSpareBatchSaveRunning = true;
+  updateSaveStatusIndicator();
+
+  try {
+    const result = await saveSpareChanges(changes, force);
+
+    if (isOkResult(result)) {
+      applySaveSuccess(result);
+      return;
+    }
+
+    if (isConflictResult(result)) {
+      pendingConflictAction = () => saveSpareChangesFromPendingAction(changes, true);
+      pendingConflictAction._actionName = "updateSpares";
+      openConflictModal();
+      return;
+    }
+
+    throw createSaveError(result, "保存に失敗しました", "S01");
+  } catch (error) {
+    console.error(error);
+    pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
+    pendingUpdateAction._actionName = "updateSpares";
+    openUpdateRetryModal(error && error.code ? error.code : "N01");
+  } finally {
+    isSpareBatchSaveRunning = false;
+    updateSaveStatusIndicator();
+  }
+}
+
 function getMutationActionName(mutation) {
   return mutation && mutation.action ? String(mutation.action) : "saveAll";
 }
@@ -939,13 +1073,19 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
     force: args.force
   };
 
+  if (!isSpareBatchSaveRunning && (pendingSpareChanges.size > 0 || spareSaveTimer)) {
+    await flushSpareChanges();
+  }
+
   if (isImmediateSaveRunning) {
     immediateSaveQueue.push(firstRequest);
     immediateSaveQueued = true;
+    updateSaveStatusIndicator();
     return;
   }
 
   isImmediateSaveRunning = true;
+  updateSaveStatusIndicator();
 
   try {
     let currentRequest = firstRequest;
@@ -982,6 +1122,7 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   } finally {
     isImmediateSaveRunning = false;
     immediateSaveQueued = immediateSaveQueue.length > 0;
+    updateSaveStatusIndicator();
   }
 }
 
@@ -2238,10 +2379,7 @@ function toggleSpare(index) {
   if (shoppingMode) {
     render();
   } else {
-    saveImmediateChange(buildSaveMutation("updateSpare", {
-      id: items[index].id,
-      hasSpare: items[index].hasSpare
-    }));
+    scheduleSpareSave(items[index].id, items[index].hasSpare);
     render();
   }
 }
