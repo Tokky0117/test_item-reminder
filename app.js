@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.6";
+const APP_VERSION = "2.1.1";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -669,7 +669,8 @@ function updateActionButtons() {
 
   if (purchaseCompleteButton) {
     const isSavingThisButton = isModeSaving && shoppingMode;
-    purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasChanges;
+    const hasShoppingTargets = shoppingModeItemIds.size > 0;
+    purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasShoppingTargets;
     purchaseCompleteButton.classList.toggle("saving", isSavingThisButton);
     purchaseCompleteButton.innerHTML = isSavingThisButton ? getSavingButtonHtml() : "購入確定";
   }
@@ -1349,12 +1350,17 @@ function render() {
   }
 
   let previousCategory = null;
+  let stockLegendRendered = false;
 
   displayItems.forEach(item => {
     const currentCategory = item.category || "other";
 
     if (currentCategory !== previousCategory) {
-      container.appendChild(createCategoryHeading(currentCategory));
+      const showStockLegend = !shoppingMode && !stockLegendRendered;
+      container.appendChild(createCategoryHeading(currentCategory, showStockLegend));
+      if (showStockLegend) {
+        stockLegendRendered = true;
+      }
       previousCategory = currentCategory;
     }
 
@@ -1679,12 +1685,27 @@ function createCheckSvg() {
   `;
 }
 
-function createCategoryHeading(category) {
+function createStockLegendHtml() {
+  return `
+    <div class="stock-legend" aria-label="在庫表示の説明">
+      <span class="stock-legend-item">
+        <span class="stock-legend-dot has-spare" aria-hidden="true"></span>
+        <span>あり</span>
+      </span>
+      <span class="stock-legend-item">
+        <span class="stock-legend-dot no-spare" aria-hidden="true"></span>
+        <span>なし</span>
+      </span>
+    </div>
+  `;
+}
+
+function createCategoryHeading(category, showStockLegend = false) {
   const heading = document.createElement("div");
   const isCollapsed = collapsedCategories.has(category || "other");
   const arrowDirection = isCollapsed ? "down" : "up";
 
-  heading.className = `category-heading ${isCollapsed ? "collapsed" : ""}`;
+  heading.className = `category-heading ${isCollapsed ? "collapsed" : ""} ${showStockLegend ? "with-stock-legend" : ""}`;
 
   heading.innerHTML = `
     <button
@@ -1699,6 +1720,7 @@ function createCategoryHeading(category) {
         ${createDoubleChevronSvg(arrowDirection)}
       </span>
     </button>
+    ${showStockLegend ? createStockLegendHtml() : ""}
   `;
 
   return heading;
@@ -1733,7 +1755,7 @@ function createItemRow(item) {
   const shouldHighlight = highlightedItemId === item.id;
   const row = document.createElement("div");
 
-  row.className = `row ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""} ${shouldHighlight ? "item-highlight" : ""}`;
+  row.className = `row ${item.hasSpare ? "has-spare" : "no-spare"} ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""} ${shouldHighlight ? "item-highlight" : ""}`;
   row.dataset.itemId = item.id;
 
   if (isActiveReorder) {
@@ -1832,11 +1854,9 @@ function createStockToggleHtml(item, index) {
       data-action="toggle-spare"
       data-index="${index}"
       aria-label="${label}"
+      title="${label}"
     >
-      <span class="stock-toggle-track">
-        <span class="stock-toggle-knob" aria-hidden="true"></span>
-        <span class="stock-toggle-text">${label}</span>
-      </span>
+      <span class="stock-status-dot" aria-hidden="true"></span>
     </button>
   `;
 }
@@ -2951,7 +2971,23 @@ function confirmDeleteItem() {
 }
 
 function openPurchaseConfirm() {
-  if (!shoppingMode || !hasModeChanges() || isModeSaving) return;
+  if (!shoppingMode || isModeSaving) return;
+
+  const hasCheckedPurchaseItems = Array.from(shoppingModeItemIds).some(id => {
+    const item = items.find(baseItem => baseItem.id === id);
+    return item && item.hasSpare === true;
+  });
+
+  if (!hasCheckedPurchaseItems) {
+    showToast("チェックされた項目がありません。購入したものにチェックを入れてください。");
+    return;
+  }
+
+  const message = document.getElementById("purchaseConfirmMessage");
+  if (message) {
+    message.textContent = "チェックした日用品を「在庫あり」に戻します。\n購入を確定しますか？";
+  }
+
   document.getElementById("purchaseConfirmModal").classList.add("show");
 }
 
