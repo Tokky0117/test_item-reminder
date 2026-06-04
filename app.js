@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.0.5";
+const APP_VERSION = "2.0.6";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -113,6 +113,7 @@ let pendingSpareChanges = new Map();
 let spareSaveTimer = null;
 let isSpareBatchSaveRunning = false;
 let spareBatchSavePromise = null;
+let spareFlushDeferredUntilImmediateSave = false;
 let isModeSaving = false;
 
 let isRefreshing = false;
@@ -953,7 +954,8 @@ function hasPendingSaveWork() {
     immediateSaveQueue.length > 0 ||
     !!spareSaveTimer ||
     pendingSpareChanges.size > 0 ||
-    isSpareBatchSaveRunning;
+    isSpareBatchSaveRunning ||
+    spareFlushDeferredUntilImmediateSave;
 }
 
 function updateSaveStatusIndicator() {
@@ -963,6 +965,30 @@ function updateSaveStatusIndicator() {
   const visible = !shoppingMode && hasPendingSaveWork();
   saveStatus.textContent = visible ? "保存中…" : "";
   saveStatus.classList.toggle("visible", visible);
+}
+
+function hasImmediateSaveWork() {
+  return isImmediateSaveRunning || immediateSaveQueued || immediateSaveQueue.length > 0;
+}
+
+function deferSpareFlushUntilImmediateSaveDone() {
+  if (spareSaveTimer) {
+    clearTimeout(spareSaveTimer);
+    spareSaveTimer = null;
+  }
+  spareFlushDeferredUntilImmediateSave = true;
+  updateSaveStatusIndicator();
+}
+
+function scheduleDeferredSpareFlushNow() {
+  if (spareSaveTimer || pendingSpareChanges.size === 0) return;
+
+  spareFlushDeferredUntilImmediateSave = false;
+  spareSaveTimer = setTimeout(() => {
+    spareSaveTimer = null;
+    flushSpareChanges();
+  }, 0);
+  updateSaveStatusIndicator();
 }
 
 function buildSpareChangesPayload(changesMap) {
@@ -1012,6 +1038,16 @@ async function flushSpareChanges(force = false) {
     }
     return pendingSpareChanges.size === 0;
   }
+
+  // 追加・編集・削除・並び替えなどの保存が先に走っている場合は、
+  // 在庫トグルの一括保存を送信せず、先行保存の完了後にまとめて送る。
+  // 送信直前の最新 serverVersion を使うため。
+  if (!force && hasImmediateSaveWork()) {
+    deferSpareFlushUntilImmediateSaveDone();
+    return true;
+  }
+
+  spareFlushDeferredUntilImmediateSave = false;
 
   if (spareSaveTimer) {
     clearTimeout(spareSaveTimer);
@@ -1190,6 +1226,11 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   } finally {
     isImmediateSaveRunning = false;
     immediateSaveQueued = immediateSaveQueue.length > 0;
+
+    if (!isImmediateSaveRunning && immediateSaveQueue.length === 0 && pendingSpareChanges.size > 0) {
+      scheduleDeferredSpareFlushNow();
+    }
+
     updateSaveStatusIndicator();
   }
 }
