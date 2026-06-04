@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.1";
+const APP_VERSION = "2.1.2";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -64,6 +64,8 @@ let collapsedCategories = new Set();
 let pendingFocusItemId = null;
 let highlightedItemId = null;
 let highlightTimer = null;
+let recentlyToggledItemId = null;
+let recentlyToggledTimer = null;
 
 let modalMode = "add";
 let editingItemId = null;
@@ -664,15 +666,21 @@ function updateActionButtons() {
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering || isRefreshing || getShoppingCopyItems().length === 0;
+    const copyCount = getShoppingCopyItems().length;
+    copyButton.disabled = isModeSaving || isReordering || isRefreshing || copyCount === 0;
+    copyButton.dataset.count = String(copyCount);
   }
 
   if (purchaseCompleteButton) {
     const isSavingThisButton = isModeSaving && shoppingMode;
     const hasShoppingTargets = shoppingModeItemIds.size > 0;
+    const checkedCount = getCheckedShoppingItemCount();
     purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasShoppingTargets;
     purchaseCompleteButton.classList.toggle("saving", isSavingThisButton);
-    purchaseCompleteButton.innerHTML = isSavingThisButton ? getSavingButtonHtml() : "購入確定";
+    purchaseCompleteButton.classList.toggle("has-checked", checkedCount > 0);
+    purchaseCompleteButton.innerHTML = isSavingThisButton
+      ? getSavingButtonHtml()
+      : (checkedCount > 0 ? `購入確定 <span class="purchase-count">${checkedCount}</span>` : "購入確定");
   }
 
   updateSaveStatusIndicator();
@@ -1357,7 +1365,8 @@ function render() {
 
     if (currentCategory !== previousCategory) {
       const showStockLegend = !shoppingMode && !stockLegendRendered;
-      container.appendChild(createCategoryHeading(currentCategory, showStockLegend));
+      const categoryCount = displayItems.filter(displayItem => (displayItem.category || "other") === currentCategory).length;
+      container.appendChild(createCategoryHeading(currentCategory, showStockLegend, categoryCount));
       if (showStockLegend) {
         stockLegendRendered = true;
       }
@@ -1484,11 +1493,13 @@ function updateAppModeClasses() {
   }
 
   if (copyButton) {
-    copyButton.disabled = isModeSaving || isReordering || isRefreshing || getShoppingCopyItems().length === 0;
+    const copyCount = getShoppingCopyItems().length;
+    copyButton.disabled = isModeSaving || isReordering || isRefreshing || copyCount === 0;
+    copyButton.dataset.count = String(copyCount);
   }
 
   if (appTitle) {
-    appTitle.textContent = shoppingMode ? "買い物モード" : "日用品リスト";
+    appTitle.textContent = shoppingMode ? "買い物リスト" : "日用品リスト";
   }
 }
 
@@ -1641,6 +1652,37 @@ function finishPullRefresh() {
   });
 }
 
+function sortShoppingItems(sourceItems) {
+  return sourceItems
+    .map(item => ({
+      item: item,
+      originalIndex: items.findIndex(baseItem => baseItem.id === item.id)
+    }))
+    .sort((a, b) => {
+      const categoryDiff =
+        getCategoryOrder(a.item.category || "other") -
+        getCategoryOrder(b.item.category || "other");
+
+      if (categoryDiff !== 0) {
+        return categoryDiff;
+      }
+
+      // 買い物中は、未購入を上・購入チェック済みを下に寄せる。
+      const checkedDiff = Number(a.item.hasSpare === true) - Number(b.item.hasSpare === true);
+      if (checkedDiff !== 0) {
+        return checkedDiff;
+      }
+
+      const orderDiff = getOrderValue(a.item) - getOrderValue(b.item);
+      if (orderDiff !== 0) {
+        return orderDiff;
+      }
+
+      return a.originalIndex - b.originalIndex;
+    })
+    .map(entry => entry.item);
+}
+
 function getDisplayItems() {
   let displayItems = shoppingMode
     ? items.filter(item => shoppingModeItemIds.has(item.id))
@@ -1650,7 +1692,16 @@ function getDisplayItems() {
     displayItems = displayItems.filter(item => item.icon === activeOwnerTab);
   }
 
-  return sortItemsByCategory(displayItems);
+  return shoppingMode ? sortShoppingItems(displayItems) : sortItemsByCategory(displayItems);
+}
+
+function getCheckedShoppingItemCount() {
+  if (!shoppingMode) return 0;
+
+  return Array.from(shoppingModeItemIds).filter(id => {
+    const item = items.find(baseItem => baseItem.id === id);
+    return item && item.hasSpare === true;
+  }).length;
 }
 
 function getVisibleReorderItemsForCategory(category) {
@@ -1688,6 +1739,7 @@ function createCheckSvg() {
 function createStockLegendHtml() {
   return `
     <div class="stock-legend" aria-label="在庫表示の説明">
+      <span class="stock-legend-label">在庫</span>
       <span class="stock-legend-item">
         <span class="stock-legend-dot has-spare" aria-hidden="true"></span>
         <span>あり</span>
@@ -1700,7 +1752,7 @@ function createStockLegendHtml() {
   `;
 }
 
-function createCategoryHeading(category, showStockLegend = false) {
+function createCategoryHeading(category, showStockLegend = false, count = 0) {
   const heading = document.createElement("div");
   const isCollapsed = collapsedCategories.has(category || "other");
   const arrowDirection = isCollapsed ? "down" : "up";
@@ -1716,6 +1768,7 @@ function createCategoryHeading(category, showStockLegend = false) {
       aria-label="${getCategoryName(category || "other")}の表示切り替え"
     >
       <span>${getCategoryName(category || "other")}</span>
+      <span class="category-count" aria-hidden="true">${count}件</span>
       <span class="category-arrow" aria-hidden="true">
         ${createDoubleChevronSvg(arrowDirection)}
       </span>
@@ -1755,7 +1808,8 @@ function createItemRow(item) {
   const shouldHighlight = highlightedItemId === item.id;
   const row = document.createElement("div");
 
-  row.className = `row ${item.hasSpare ? "has-spare" : "no-spare"} ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""} ${shouldHighlight ? "item-highlight" : ""}`;
+  const wasRecentlyToggled = recentlyToggledItemId === item.id;
+  row.className = `row ${item.hasSpare ? "has-spare" : "no-spare"} ${isOpen ? "swipe-open" : ""} ${isActiveReorder ? "reorder-active" : ""} ${shouldHighlight ? "item-highlight" : ""} ${wasRecentlyToggled ? "stock-just-toggled" : ""}`;
   row.dataset.itemId = item.id;
 
   if (isActiveReorder) {
@@ -1837,7 +1891,7 @@ function createShoppingCheckHtml(item, index) {
           <path d="M3.2 8.3L6.5 11.3L12.8 4.7"></path>
         </svg>
       </span>
-      <span>購入</span>
+      <span>${checked ? "済み" : "購入"}</span>
     </button>
   `;
 }
@@ -2505,6 +2559,12 @@ function toggleSpare(index) {
 
   closeSwipedItemWithoutRender();
   items[index].hasSpare = !items[index].hasSpare;
+  recentlyToggledItemId = items[index].id;
+  clearTimeout(recentlyToggledTimer);
+  recentlyToggledTimer = setTimeout(() => {
+    recentlyToggledItemId = null;
+    render();
+  }, 420);
 
   if (shoppingMode) {
     render();
@@ -2985,7 +3045,8 @@ function openPurchaseConfirm() {
 
   const message = document.getElementById("purchaseConfirmMessage");
   if (message) {
-    message.textContent = "チェックした日用品を「在庫あり」に戻します。\n購入を確定しますか？";
+    const checkedCount = getCheckedShoppingItemCount();
+    message.textContent = `チェックした${checkedCount}件の日用品を「在庫あり」に戻します。\n購入を確定しますか？`;
   }
 
   document.getElementById("purchaseConfirmModal").classList.add("show");
