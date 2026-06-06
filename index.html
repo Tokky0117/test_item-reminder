@@ -15,7 +15,7 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver2.1.2</div>
+      <div class="startup-version" id="startupVersion">ver2.1.3</div>
       <div class="startup-message" id="startupMessage"></div>
       <button class="startup-start-button" id="startupStartButton" data-action="start-title">スタート</button>
     </div>
@@ -34,7 +34,7 @@
             <path d="M13.1 11.3H5.2C3.9 11.3 2.9 10.3 2.9 9"></path>
           </svg>
         </button>
-        <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" data-action="open-home-cancel" aria-label="買い物をキャンセル">キャンセル</button>
+        <button class="shopping-cancel-top-button" id="shoppingCancelTopButton" data-action="open-home-cancel" aria-label="買い物リストから戻る">戻る</button>
 
         <div class="title-center">
           <h1 id="appTitle">日用品リスト</h1>
@@ -140,8 +140,7 @@
   <div class="modal-backdrop" id="purchaseConfirmModal">
     <div class="modal">
       <h2>購入確認</h2>
-      <div class="confirm-message" id="purchaseConfirmMessage">チェックした日用品を「在庫あり」に戻します。
-購入を確定しますか？</div>
+      <div class="confirm-message" id="purchaseConfirmMessage">チェックした日用品を購入済みにしますか？</div>
       <div class="modal-actions">
         <button class="cancel-button" data-action="close-purchase-confirm">いいえ</button>
         <button class="confirm-button shopping" data-action="confirm-purchase-complete">はい</button>
@@ -152,7 +151,7 @@
   <div class="modal-backdrop" id="homeCancelConfirmModal">
     <div class="modal">
       <h2>確認</h2>
-      <div class="confirm-message" id="homeCancelConfirmMessage">購入をキャンセルしますか？</div>
+      <div class="confirm-message" id="homeCancelConfirmMessage">購入チェックを破棄して戻りますか？</div>
       <div class="modal-actions">
         <button class="cancel-button" data-action="close-home-cancel-confirm">いいえ</button>
         <button class="confirm-button" data-action="confirm-home-cancel">はい</button>
