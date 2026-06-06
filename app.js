@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.6";
+const APP_VERSION = "2.1.7";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -744,21 +744,10 @@ function applyLoadedItemsResponse(response) {
   hideStartupScreen();
 }
 
+
 function getItemsFromLoadResponse(response) {
   const loadedItems = Array.isArray(response) ? response : (response && response.items || []);
   return normalizeItems(loadedItems);
-}
-
-function applyLoadedItemsResponseWithoutRender(response) {
-  if (!Array.isArray(response) && response && response.version !== undefined) {
-    serverVersion = Number(response.version) || 0;
-  }
-
-  items = getItemsFromLoadResponse(response);
-
-  if (!shoppingMode) {
-    shoppingModeItemIds.clear();
-  }
 }
 
 function applyServerVersionFromLoadResponse(response) {
@@ -1505,12 +1494,6 @@ function setupSwipeCloseGuards() {
     event.preventDefault();
     event.stopPropagation();
   }, { passive: false, capture: true });
-
-  container.addEventListener("scroll", () => {
-    if (swipedItemId) {
-      closeSwipedItem();
-    }
-  }, { passive: true });
 }
 
 // ========================================
@@ -1758,15 +1741,20 @@ function resetPullRefreshVisual() {
   }, 240);
 }
 
+
+function isItemHorizontalSwipeActive() {
+  return !!swipeItemId && swipeDirection === "horizontal";
+}
+
+function shouldBlockPullRefreshBySwipe() {
+  return isItemHorizontalSwipeActive();
+}
+
 function setupPullToRefresh() {
   const container = document.getElementById("items");
 
   container.addEventListener("touchstart", event => {
     if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen()) return;
-    if (swipedItemId || swipeItemId) {
-      closeSwipedItem();
-      return;
-    }
     if (container.scrollTop > 0) return;
     if (!event.touches || event.touches.length !== 1) return;
 
@@ -1778,7 +1766,7 @@ function setupPullToRefresh() {
 
   container.addEventListener("touchmove", event => {
     if (!isPulling) return;
-    if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen()) {
+    if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen() || shouldBlockPullRefreshBySwipe()) {
       resetPullRefreshVisual();
       return;
     }
@@ -1809,7 +1797,8 @@ function setupPullToRefresh() {
       !isModeSaving &&
       !isReordering &&
       !isRefreshing &&
-      !isBlockingModalOpen();
+      !isBlockingModalOpen() &&
+      !shouldBlockPullRefreshBySwipe();
 
     isPulling = false;
 
@@ -2182,7 +2171,7 @@ function moveItemTouch(event) {
 
   if (swipeDirection === "vertical") {
     swipeCanceled = true;
-    if (swipedItemId) {
+    if (swipedItemId && swipeItemId === swipedItemId) {
       swipedItemId = null;
       cancelItemTouch();
       render();
@@ -2194,7 +2183,6 @@ function moveItemTouch(event) {
 
   if (swipeDirection !== "horizontal") return;
 
-  cancelPullRefreshInteraction();
   swipeMoved = true;
   event.preventDefault();
 
