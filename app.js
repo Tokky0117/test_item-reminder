@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.3";
+const APP_VERSION = "2.1.4";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -674,7 +674,7 @@ function updateActionButtons() {
     const isSavingThisButton = isModeSaving && shoppingMode;
     const hasShoppingTargets = shoppingModeItemIds.size > 0;
     const checkedCount = getCheckedShoppingItemCount();
-    purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasShoppingTargets;
+    purchaseCompleteButton.disabled = isModeSaving || isRefreshing || !hasShoppingTargets || checkedCount === 0;
     purchaseCompleteButton.classList.toggle("saving", isSavingThisButton);
     purchaseCompleteButton.classList.toggle("has-checked", checkedCount > 0);
     purchaseCompleteButton.innerHTML = isSavingThisButton
@@ -2608,7 +2608,7 @@ function buildShoppingListText() {
       previousCategory = category;
     }
 
-    lines.push(`・${item.name}${getOwnerSuffix(item.icon)}`);
+    lines.push(`□ ${item.name}${getOwnerSuffix(item.icon)}`);
 
     if (item.note) {
       lines.push(`  メモ：${item.note}`);
@@ -3037,7 +3037,6 @@ function openPurchaseConfirm() {
   });
 
   if (!hasCheckedPurchaseItems) {
-    showToast("購入したものにチェックしてください");
     return;
   }
 
