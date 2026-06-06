@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.8";
+const APP_VERSION = "2.1.9";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -1526,18 +1526,12 @@ function render() {
   }
 
   let previousCategory = null;
-  let stockLegendRendered = false;
-
   displayItems.forEach(item => {
     const currentCategory = item.category || "other";
 
     if (currentCategory !== previousCategory) {
-      const showStockLegend = !shoppingMode && !stockLegendRendered;
       const categoryCount = displayItems.filter(displayItem => (displayItem.category || "other") === currentCategory).length;
-      container.appendChild(createCategoryHeading(currentCategory, showStockLegend, categoryCount));
-      if (showStockLegend) {
-        stockLegendRendered = true;
-      }
+      container.appendChild(createCategoryHeading(currentCategory, false, categoryCount));
       previousCategory = currentCategory;
     }
 
@@ -1910,28 +1904,12 @@ function createCheckSvg() {
   `;
 }
 
-function createStockLegendHtml() {
-  return `
-    <div class="stock-legend" aria-label="在庫表示の説明">
-      <span class="stock-legend-label">在庫</span>
-      <span class="stock-legend-item">
-        <span class="stock-legend-dot has-spare" aria-hidden="true"></span>
-        <span>あり</span>
-      </span>
-      <span class="stock-legend-item">
-        <span class="stock-legend-dot no-spare" aria-hidden="true"></span>
-        <span>なし</span>
-      </span>
-    </div>
-  `;
-}
-
 function createCategoryHeading(category, showStockLegend = false, count = 0) {
   const heading = document.createElement("div");
   const isCollapsed = collapsedCategories.has(category || "other");
   const arrowDirection = isCollapsed ? "down" : "up";
 
-  heading.className = `category-heading ${isCollapsed ? "collapsed" : ""} ${showStockLegend ? "with-stock-legend" : ""}`;
+  heading.className = `category-heading ${isCollapsed ? "collapsed" : ""}`;
 
   heading.innerHTML = `
     <button
@@ -1947,7 +1925,6 @@ function createCategoryHeading(category, showStockLegend = false, count = 0) {
         ${createDoubleChevronSvg(arrowDirection)}
       </span>
     </button>
-    ${showStockLegend ? createStockLegendHtml() : ""}
   `;
 
   return heading;
@@ -1957,8 +1934,8 @@ function renderEmptyShoppingMessage(container) {
   const empty = document.createElement("div");
   empty.className = "empty-list-message";
   empty.textContent = activeOwnerTab === "all"
-    ? "買い物対象はありません"
-    : getOwnerName(activeOwnerTab) + "の買い物対象はありません";
+    ? "買い足すものはありません"
+    : getOwnerName(activeOwnerTab) + "の買い足すものはありません";
   container.appendChild(empty);
 }
 
@@ -2071,7 +2048,7 @@ function createShoppingCheckHtml(item, index) {
 }
 
 function createStockToggleHtml(item, index) {
-  const label = item.hasSpare ? "在庫あり" : "在庫なし";
+  const label = item.hasSpare ? "足りてる" : "買い足す";
   const className = item.hasSpare ? "has-spare" : "no-spare";
 
   return `
@@ -2084,7 +2061,7 @@ function createStockToggleHtml(item, index) {
       aria-label="${label}"
       title="${label}"
     >
-      <span class="stock-status-dot" aria-hidden="true"></span>
+      <span class="spare-badge-text">${label}</span>
     </button>
   `;
 }
@@ -2851,7 +2828,7 @@ async function copyShoppingList(event) {
   const targetItems = getShoppingCopyItems();
 
   if (targetItems.length === 0) {
-    showToast("コピーする買い物リストがありません");
+    showToast("コピーする買い足すものがありません");
     return;
   }
 
