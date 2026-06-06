@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.5";
+const APP_VERSION = "2.1.6";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -105,6 +105,7 @@ let isOwnerPickerOpen = false;
 
 let modeStartItems = null;
 let pendingUpdateAction = null;
+let pendingUpdateErrorCode = "";
 let pendingConflictAction = null;
 let serverVersion = 0;
 
@@ -743,6 +744,138 @@ function applyLoadedItemsResponse(response) {
   hideStartupScreen();
 }
 
+function getItemsFromLoadResponse(response) {
+  const loadedItems = Array.isArray(response) ? response : (response && response.items || []);
+  return normalizeItems(loadedItems);
+}
+
+function applyLoadedItemsResponseWithoutRender(response) {
+  if (!Array.isArray(response) && response && response.version !== undefined) {
+    serverVersion = Number(response.version) || 0;
+  }
+
+  items = getItemsFromLoadResponse(response);
+
+  if (!shoppingMode) {
+    shoppingModeItemIds.clear();
+  }
+}
+
+function applyServerVersionFromLoadResponse(response) {
+  if (!Array.isArray(response) && response && response.version !== undefined) {
+    serverVersion = Number(response.version) || 0;
+  }
+}
+
+function findItemInList(sourceItems, id) {
+  return sourceItems.find(item => String(item.id) === String(id));
+}
+
+function normalizeSingleItemForCompare(item) {
+  return normalizeItems([item || {}])[0] || null;
+}
+
+function isSameItemForSave(a, b) {
+  if (!a || !b) return false;
+  return String(a.id || "") === String(b.id || "") &&
+    String(a.name || "") === String(b.name || "") &&
+    (a.hasSpare === true) === (b.hasSpare === true) &&
+    String(a.note || "") === String(b.note || "") &&
+    String(a.icon || "共") === String(b.icon || "共") &&
+    String(a.category || "other") === String(b.category || "other") &&
+    Number(a.categoryOrder || 0) === Number(b.categoryOrder || 0);
+}
+
+function isMutationAlreadyApplied(mutation, sourceItems) {
+  if (!mutation || !mutation.action) return false;
+
+  switch (mutation.action) {
+    case "updateSpares":
+      return Array.isArray(mutation.changes) && mutation.changes.every(change => {
+        const item = findItemInList(sourceItems, change.i);
+        return item && item.hasSpare === (change.s === true);
+      });
+    case "updateSpare": {
+      const item = findItemInList(sourceItems, mutation.id);
+      return item && item.hasSpare === (mutation.hasSpare === true);
+    }
+    case "completePurchase":
+      return Array.isArray(mutation.ids) && mutation.ids.every(id => {
+        const item = findItemInList(sourceItems, id);
+        return item && item.hasSpare === true;
+      });
+    case "addItem": {
+      const item = findItemInList(sourceItems, mutation.item && mutation.item.id);
+      return isSameItemForSave(item, normalizeSingleItemForCompare(mutation.item || {}));
+    }
+    case "updateItem": {
+      const item = findItemInList(sourceItems, mutation.item && mutation.item.id);
+      return isSameItemForSave(item, normalizeSingleItemForCompare(mutation.item || {}));
+    }
+    case "deleteItem":
+      return !findItemInList(sourceItems, mutation.id);
+    case "updateOrder":
+      return Array.isArray(mutation.orders) && mutation.orders.every(order => {
+        const item = findItemInList(sourceItems, order.i);
+        return item && Number(item.categoryOrder) === Number(order.o);
+      });
+    default:
+      return false;
+  }
+}
+
+function arePendingRequestsAlreadyApplied(requests, sourceItems) {
+  return Array.isArray(requests) && requests.length > 0 && requests.every(request => {
+    return isMutationAlreadyApplied(request.mutation, sourceItems);
+  });
+}
+
+function clonePendingRequests(requests) {
+  return (requests || []).filter(Boolean).map(request => ({
+    mutation: request.mutation || null,
+    force: request.force === true
+  }));
+}
+
+function shouldCheckLatestBeforeRetry(errorCode) {
+  return errorCode === "N01" || errorCode === "N02";
+}
+
+async function retryPendingRequestsAfterLatestCheck(requests, retryAction) {
+  const retryRequests = clonePendingRequests(requests);
+  if (retryRequests.length === 0) return;
+
+  hideToast();
+  resetPullRefreshVisual();
+  setConflictModalLoading(true);
+  document.getElementById("conflictModal").classList.add("show");
+
+  try {
+    const response = await requestJsonp({});
+    const latestItems = getItemsFromLoadResponse(response);
+
+    if (arePendingRequestsAlreadyApplied(retryRequests, latestItems)) {
+      applyLoadedItemsResponse(response);
+      closeConflictModal();
+      showToast("保存状態を確認しました");
+      return;
+    }
+
+    applyServerVersionFromLoadResponse(response);
+    closeConflictModal();
+
+    if (typeof retryAction === "function") {
+      retryAction();
+    } else {
+      runImmediateSaveRequests(retryRequests);
+    }
+  } catch (error) {
+    console.error(error);
+    closeConflictModal();
+    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+  }
+}
+
 function loadItems(options = {}) {
   const fromPull = options.fromPull === true;
   const afterLoadMessage = options.afterLoadMessage || "";
@@ -1100,6 +1233,10 @@ async function flushSpareChanges(force = false) {
     console.error(error);
     pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
     pendingUpdateAction._actionName = "updateSpares";
+    pendingUpdateAction._pendingRequests = [{
+      mutation: buildSaveMutation("updateSpares", { changes: changes }),
+      force: force === true
+    }];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
     return false;
   } finally {
@@ -1142,6 +1279,10 @@ async function saveSpareChangesFromPendingAction(changes, force = false) {
     console.error(error);
     pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
     pendingUpdateAction._actionName = "updateSpares";
+    pendingUpdateAction._pendingRequests = [{
+      mutation: buildSaveMutation("updateSpares", { changes: changes }),
+      force: force === true
+    }];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isSpareBatchSaveRunning = false;
@@ -1174,6 +1315,7 @@ function createPendingImmediateRequestsAction(requests, forceOverride = null) {
   const action = () => runImmediateSaveRequests(retryRequests);
   const firstMutation = retryRequests.length > 0 ? retryRequests[0].mutation : null;
   action._actionName = getMutationActionName(firstMutation);
+  action._pendingRequests = clonePendingRequests(retryRequests);
   return action;
 }
 
@@ -1319,6 +1461,11 @@ async function commitModeAndExit(successMessage, force = false) {
     console.error(error);
     setModeSaving(false);
     pendingUpdateAction = () => commitModeAndExit(successMessage, force);
+    pendingUpdateAction._actionName = "completePurchase";
+    pendingUpdateAction._pendingRequests = [{
+      mutation: buildSaveMutation("completePurchase", { ids: purchaseIds }),
+      force: force === true
+    }];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   }
 }
@@ -1358,6 +1505,12 @@ function setupSwipeCloseGuards() {
     event.preventDefault();
     event.stopPropagation();
   }, { passive: false, capture: true });
+
+  container.addEventListener("scroll", () => {
+    if (swipedItemId) {
+      closeSwipedItem();
+    }
+  }, { passive: true });
 }
 
 // ========================================
@@ -1610,6 +1763,10 @@ function setupPullToRefresh() {
 
   container.addEventListener("touchstart", event => {
     if (shoppingMode || isModeSaving || isReordering || isRefreshing || isBlockingModalOpen()) return;
+    if (swipedItemId || swipeItemId) {
+      closeSwipedItem();
+      return;
+    }
     if (container.scrollTop > 0) return;
     if (!event.touches || event.touches.length !== 1) return;
 
@@ -2025,12 +2182,19 @@ function moveItemTouch(event) {
 
   if (swipeDirection === "vertical") {
     swipeCanceled = true;
+    if (swipedItemId) {
+      swipedItemId = null;
+      cancelItemTouch();
+      render();
+      return;
+    }
     cancelItemTouch();
     return;
   }
 
   if (swipeDirection !== "horizontal") return;
 
+  cancelPullRefreshInteraction();
   swipeMoved = true;
   event.preventDefault();
 
@@ -3142,6 +3306,7 @@ function getUpdateRetryMessage() {
 }
 
 function openUpdateRetryModal(errorCode) {
+  pendingUpdateErrorCode = errorCode ? String(errorCode) : "";
   hideToast();
   resetPullRefreshVisual();
 
@@ -3166,7 +3331,15 @@ function retryPendingUpdate() {
 
   if (typeof pendingUpdateAction === "function") {
     const action = pendingUpdateAction;
+    const errorCode = pendingUpdateErrorCode;
     pendingUpdateAction = null;
+    pendingUpdateErrorCode = "";
+
+    if (shouldCheckLatestBeforeRetry(errorCode) && Array.isArray(action._pendingRequests)) {
+      retryPendingRequestsAfterLatestCheck(action._pendingRequests, action);
+      return;
+    }
+
     action();
   }
 }
@@ -3174,6 +3347,7 @@ function retryPendingUpdate() {
 async function cancelPendingUpdate() {
   closeUpdateRetryModal();
   pendingUpdateAction = null;
+  pendingUpdateErrorCode = "";
   resetModesAndSelections();
   hideToast();
   resetPullRefreshVisual();
@@ -3356,5 +3530,19 @@ loadItems();
 // 初期化
 // ========================================
 if ("serviceWorker" in navigator) {
-  navigator.serviceWorker.register("./sw.js");
+  let serviceWorkerRefreshing = false;
+
+  navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (serviceWorkerRefreshing) return;
+    serviceWorkerRefreshing = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register("./sw.js").then(registration => {
+    if (registration && typeof registration.update === "function") {
+      registration.update().catch(error => console.warn("Service Worker update failed", error));
+    }
+  }).catch(error => {
+    console.warn("Service Worker registration failed", error);
+  });
 }
