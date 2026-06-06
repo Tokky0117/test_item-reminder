@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.9";
+const APP_VERSION = "2.1.10";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -1934,8 +1934,8 @@ function renderEmptyShoppingMessage(container) {
   const empty = document.createElement("div");
   empty.className = "empty-list-message";
   empty.textContent = activeOwnerTab === "all"
-    ? "買い足すものはありません"
-    : getOwnerName(activeOwnerTab) + "の買い足すものはありません";
+    ? "補充するものはありません"
+    : getOwnerName(activeOwnerTab) + "の補充するものはありません";
   container.appendChild(empty);
 }
 
@@ -2048,7 +2048,8 @@ function createShoppingCheckHtml(item, index) {
 }
 
 function createStockToggleHtml(item, index) {
-  const label = item.hasSpare ? "足りてる" : "買い足す";
+  const label = item.hasSpare ? "補充対象にする" : "補充";
+  const text = item.hasSpare ? "" : "補充";
   const className = item.hasSpare ? "has-spare" : "no-spare";
 
   return `
@@ -2061,7 +2062,7 @@ function createStockToggleHtml(item, index) {
       aria-label="${label}"
       title="${label}"
     >
-      <span class="spare-badge-text">${label}</span>
+      <span class="spare-badge-text">${text}</span>
     </button>
   `;
 }
@@ -2828,7 +2829,7 @@ async function copyShoppingList(event) {
   const targetItems = getShoppingCopyItems();
 
   if (targetItems.length === 0) {
-    showToast("コピーする買い足すものがありません");
+    showToast("コピーする補充リストがありません");
     return;
   }
 
