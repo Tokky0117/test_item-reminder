@@ -1,4 +1,4 @@
-const CACHE_NAME = "daily-reminder-v2.1.4";
+const CACHE_NAME = "daily-reminder-v2.1.5";
 
 const FILES_TO_CACHE = [
   "./",
@@ -32,6 +32,17 @@ self.addEventListener("activate", event => {
 
 self.addEventListener("fetch", event => {
   if (event.request.method !== "GET") return;
+
+  const requestUrl = new URL(event.request.url);
+
+  // Apps Script のJSONP保存・取得通信など、外部通信はキャッシュしない。
+  if (requestUrl.origin !== self.location.origin) return;
+
+  const cacheablePaths = new Set(
+    FILES_TO_CACHE.map(file => new URL(file, self.location.href).pathname)
+  );
+
+  if (!cacheablePaths.has(requestUrl.pathname)) return;
 
   event.respondWith(
     fetch(event.request)
