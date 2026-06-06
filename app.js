@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.4";
+const APP_VERSION = "2.1.5";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -655,7 +655,6 @@ function updateActionButtons() {
   const cancelButton = document.getElementById("shoppingCancelTopButton");
   const addButton = document.querySelector(".add-top-button");
   const copyButton = document.getElementById("shoppingCopyButton");
-  const hasChanges = hasModeChanges();
 
   if (cancelButton) {
     cancelButton.disabled = isModeSaving || isReordering || isRefreshing;
@@ -968,11 +967,16 @@ function hasPendingSaveWork() {
 
 function updateSaveStatusIndicator() {
   const saveStatus = document.getElementById("saveStatus");
-  if (!saveStatus) return;
-
   const visible = !shoppingMode && hasPendingSaveWork();
-  saveStatus.textContent = visible ? "保存中…" : "";
-  saveStatus.classList.toggle("visible", visible);
+
+  if (saveStatus) {
+    saveStatus.textContent = visible ? "保存中…" : "";
+    saveStatus.classList.toggle("visible", visible);
+  }
+
+  if (document.getElementById("app")) {
+    updateAppModeClasses();
+  }
 }
 
 function hasImmediateSaveWork() {
@@ -1150,8 +1154,26 @@ function getMutationActionName(mutation) {
 }
 
 function createPendingUpdateAction(mutation, force) {
-  const action = () => saveImmediateChange(mutation, force);
+  const request = {
+    mutation: mutation || null,
+    force: force === true
+  };
+  const action = () => runImmediateSaveRequests([request]);
   action._actionName = getMutationActionName(mutation);
+  return action;
+}
+
+function createPendingImmediateRequestsAction(requests, forceOverride = null) {
+  const retryRequests = requests
+    .filter(request => request)
+    .map(request => ({
+      mutation: request.mutation || null,
+      force: forceOverride === null ? request.force === true : forceOverride === true
+    }));
+
+  const action = () => runImmediateSaveRequests(retryRequests);
+  const firstMutation = retryRequests.length > 0 ? retryRequests[0].mutation : null;
+  action._actionName = getMutationActionName(firstMutation);
   return action;
 }
 
@@ -1169,12 +1191,15 @@ function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
   };
 }
 
-async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
-  const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
-  const firstRequest = {
-    mutation: args.mutation,
-    force: args.force
-  };
+async function runImmediateSaveRequests(requests) {
+  const requestQueue = requests
+    .filter(request => request)
+    .map(request => ({
+      mutation: request.mutation || null,
+      force: request.force === true
+    }));
+
+  if (requestQueue.length === 0) return;
 
   if (isSpareBatchSaveRunning && spareBatchSavePromise) {
     await spareBatchSavePromise;
@@ -1188,7 +1213,7 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   }
 
   if (isImmediateSaveRunning) {
-    immediateSaveQueue.push(firstRequest);
+    immediateSaveQueue.push(...requestQueue);
     immediateSaveQueued = true;
     updateSaveStatusIndicator();
     return;
@@ -1197,11 +1222,11 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   isImmediateSaveRunning = true;
   updateSaveStatusIndicator();
 
-  try {
-    let currentRequest = firstRequest;
+  let currentRequest = requestQueue.shift() || null;
 
+  try {
     while (currentRequest) {
-      immediateSaveQueued = immediateSaveQueue.length > 0;
+      immediateSaveQueued = immediateSaveQueue.length > 0 || requestQueue.length > 0;
 
       const mutation = currentRequest.mutation;
       const force = currentRequest.force === true;
@@ -1210,26 +1235,24 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
       if (isOkResult(result)) {
         applySaveSuccess(result);
       } else if (isConflictResult(result)) {
+        const remainingRequests = [currentRequest, ...requestQueue, ...immediateSaveQueue];
         immediateSaveQueue = [];
         immediateSaveQueued = false;
-        pendingConflictAction = () => saveImmediateChange(mutation, true);
-        pendingConflictAction._actionName = getMutationActionName(mutation);
+        pendingConflictAction = createPendingImmediateRequestsAction(remainingRequests, true);
         openConflictModal();
         return;
       } else {
         throw createSaveError(result, "保存に失敗しました", "S01");
       }
 
-      currentRequest = immediateSaveQueue.shift() || null;
+      currentRequest = requestQueue.shift() || immediateSaveQueue.shift() || null;
     }
   } catch (error) {
     console.error(error);
+    const remainingRequests = currentRequest ? [currentRequest, ...requestQueue, ...immediateSaveQueue] : [...requestQueue, ...immediateSaveQueue];
     immediateSaveQueue = [];
     immediateSaveQueued = false;
-    pendingUpdateAction = createPendingUpdateAction(
-      (typeof currentRequest !== "undefined" && currentRequest && currentRequest.mutation) ? currentRequest.mutation : firstRequest.mutation,
-      (typeof currentRequest !== "undefined" && currentRequest && currentRequest.force === true) || firstRequest.force === true
-    );
+    pendingUpdateAction = createPendingImmediateRequestsAction(remainingRequests);
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isImmediateSaveRunning = false;
@@ -1241,6 +1264,16 @@ async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
 
     updateSaveStatusIndicator();
   }
+}
+
+async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
+  const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
+  const firstRequest = {
+    mutation: args.mutation,
+    force: args.force
+  };
+
+  return runImmediateSaveRequests([firstRequest]);
 }
 
 async function commitModeAndExit(successMessage, force = false) {
@@ -1470,9 +1503,11 @@ function updateAppModeClasses() {
   const copyButton = document.getElementById("shoppingCopyButton");
   const themeColorMeta = document.getElementById("themeColorMeta");
 
-  app.classList.toggle("shopping-mode", shoppingMode);
-  app.classList.toggle("reordering", isReordering);
-  app.classList.toggle("has-swipe-open", !!swipedItemId);
+  if (app) {
+    app.classList.toggle("shopping-mode", shoppingMode);
+    app.classList.toggle("reordering", isReordering);
+    app.classList.toggle("has-swipe-open", !!swipedItemId);
+  }
   document.body.classList.toggle("shopping-mode", shoppingMode);
 
   if (themeColorMeta) {
@@ -1480,7 +1515,7 @@ function updateAppModeClasses() {
   }
 
   if (shoppingButton) {
-    shoppingButton.disabled = isModeSaving || isReordering;
+    shoppingButton.disabled = isModeSaving || isReordering || isRefreshing || (!shoppingMode && hasPendingSaveWork());
   }
 
   if (cancelButton) {
@@ -2690,7 +2725,7 @@ async function copyShoppingList(event) {
 }
 
 function toggleShoppingMode() {
-  if (isModeSaving || isReordering) return;
+  if (isModeSaving || isReordering || isRefreshing || hasPendingSaveWork()) return;
   if (closeSwipedItemIfOpen()) return;
 
   closeSwipedItemWithoutRender();
