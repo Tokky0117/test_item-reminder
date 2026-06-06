@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.2";
+const APP_VERSION = "2.1.3";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -668,7 +668,6 @@ function updateActionButtons() {
   if (copyButton) {
     const copyCount = getShoppingCopyItems().length;
     copyButton.disabled = isModeSaving || isReordering || isRefreshing || copyCount === 0;
-    copyButton.dataset.count = String(copyCount);
   }
 
   if (purchaseCompleteButton) {
@@ -680,7 +679,7 @@ function updateActionButtons() {
     purchaseCompleteButton.classList.toggle("has-checked", checkedCount > 0);
     purchaseCompleteButton.innerHTML = isSavingThisButton
       ? getSavingButtonHtml()
-      : (checkedCount > 0 ? `購入確定 <span class="purchase-count">${checkedCount}</span>` : "購入確定");
+      : "購入確定";
   }
 
   updateSaveStatusIndicator();
@@ -1495,7 +1494,6 @@ function updateAppModeClasses() {
   if (copyButton) {
     const copyCount = getShoppingCopyItems().length;
     copyButton.disabled = isModeSaving || isReordering || isRefreshing || copyCount === 0;
-    copyButton.dataset.count = String(copyCount);
   }
 
   if (appTitle) {
@@ -1667,11 +1665,6 @@ function sortShoppingItems(sourceItems) {
         return categoryDiff;
       }
 
-      // 買い物中は、未購入を上・購入チェック済みを下に寄せる。
-      const checkedDiff = Number(a.item.hasSpare === true) - Number(b.item.hasSpare === true);
-      if (checkedDiff !== 0) {
-        return checkedDiff;
-      }
 
       const orderDiff = getOrderValue(a.item) - getOrderValue(b.item);
       if (orderDiff !== 0) {
@@ -2576,6 +2569,11 @@ function toggleSpare(index) {
 
 
 function getShoppingCopyItems() {
+  if (shoppingMode && shoppingModeItemIds.size > 0) {
+    const targetIds = new Set(shoppingModeItemIds);
+    return sortItemsByCategory(items.filter(item => targetIds.has(item.id)));
+  }
+
   return sortItemsByCategory(items.filter(item => !item.hasSpare));
 }
 
@@ -3039,14 +3037,13 @@ function openPurchaseConfirm() {
   });
 
   if (!hasCheckedPurchaseItems) {
-    showToast("チェックされた項目がありません。購入したものにチェックを入れてください。");
+    showToast("購入したものにチェックしてください");
     return;
   }
 
   const message = document.getElementById("purchaseConfirmMessage");
   if (message) {
-    const checkedCount = getCheckedShoppingItemCount();
-    message.textContent = `チェックした${checkedCount}件の日用品を「在庫あり」に戻します。\n購入を確定しますか？`;
+    message.textContent = "チェックした日用品を購入済みにしますか？";
   }
 
   document.getElementById("purchaseConfirmModal").classList.add("show");
@@ -3077,7 +3074,7 @@ function openHomeCancelConfirm() {
 
   const message = document.getElementById("homeCancelConfirmMessage");
   if (message) {
-    message.textContent = "購入をキャンセルしますか？";
+    message.textContent = "購入チェックを破棄して戻りますか？";
   }
 
   document.getElementById("homeCancelConfirmModal").classList.add("show");
