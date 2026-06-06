@@ -352,27 +352,6 @@ h1,
   display: none;
 }
 
-.shopping-copy-button::after {
-  content: attr(data-count);
-  position: absolute;
-  top: 5px;
-  right: 3px;
-  min-width: 16px;
-  height: 16px;
-  padding: 0 4px;
-  border-radius: 999px;
-  background: var(--shopping-accent-color);
-  color: white;
-  font-size: 10px;
-  font-weight: 800;
-  line-height: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-}
-
-.shopping-copy-button:disabled::after {
-  display: none;
-}
-
 .item-page-cancel-button {
   left: 0;
   color: var(--primary-color);
@@ -1129,17 +1108,6 @@ h1,
   gap: 8px;
 }
 
-.purchase-count {
-  min-width: 24px;
-  height: 24px;
-  border-radius: 999px;
-  background: rgba(255,255,255,0.22);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0 7px;
-  font-size: 13px;
-}
 
 .button-spinner {
   width: 17px;
