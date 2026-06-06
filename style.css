@@ -1027,9 +1027,6 @@ h1,
 
 .app.shopping-mode .row.has-spare .name-text {
   color: #777;
-  text-decoration: line-through;
-  text-decoration-thickness: 1.4px;
-  text-decoration-color: rgba(120,120,120,0.55);
 }
 
 .app.shopping-mode .row.has-spare .note-text,
