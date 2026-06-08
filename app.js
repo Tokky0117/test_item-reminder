@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.11";
+const APP_VERSION = "2.1.12";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -135,6 +135,7 @@ let safeActionTouch = null;
 let suppressNativeClickUntil = 0;
 let wentBackgroundWhileSaving = false;
 let backgroundReturnCheckTimer = null;
+let isBackgroundSaveRecoveryRunning = false;
 
 
 // ========================================
@@ -2842,11 +2843,11 @@ async function copyShoppingList(event) {
     }
 
     showCopyButtonDone();
-    showToast("買い物リストをコピーしました", COPY_FEEDBACK_MS);
+    showToast("コピーしました", COPY_FEEDBACK_MS);
   } catch (error) {
     if (copyTextFallback(text)) {
       showCopyButtonDone();
-      showToast("買い物リストをコピーしました", COPY_FEEDBACK_MS);
+      showToast("コピーしました", COPY_FEEDBACK_MS);
     } else {
       showToast("コピーできませんでした");
     }
@@ -3261,7 +3262,7 @@ function confirmHomeCancel() {
 }
 
 function getUpdateRetryMessage() {
-  let message = "サーバーへの更新に失敗しました。\n画面上の変更はまだ保存されていません。";
+  let message = "保存結果を確認できませんでした。\n通信状況を確認して、再更新してください。";
 
   if (isLargeSavePayload()) {
     message += "\nデータ量が多くなっている可能性があります。";
@@ -3272,6 +3273,15 @@ function getUpdateRetryMessage() {
 
 function openUpdateRetryModal(errorCode) {
   pendingUpdateErrorCode = errorCode ? String(errorCode) : "";
+
+  if (document.hidden && wentBackgroundWhileSaving) {
+    return;
+  }
+
+  if (isConflictReloading) {
+    closeConflictModal();
+  }
+
   hideToast();
   resetPullRefreshVisual();
 
@@ -3291,7 +3301,7 @@ function closeUpdateRetryModal() {
   document.getElementById("updateRetryModal").classList.remove("show");
 }
 
-function retryPendingUpdate() {
+async function retryPendingUpdate() {
   closeUpdateRetryModal();
 
   if (typeof pendingUpdateAction === "function") {
@@ -3299,7 +3309,15 @@ function retryPendingUpdate() {
     pendingUpdateAction = null;
     pendingUpdateErrorCode = "";
 
-    action();
+    openBlockingLoadingModal("再更新中", "変更内容を保存しています。");
+
+    try {
+      await Promise.resolve(action());
+    } finally {
+      if (isConflictReloading) {
+        closeConflictModal();
+      }
+    }
   }
 }
 
@@ -3321,6 +3339,39 @@ async function cancelPendingUpdate() {
     console.error(error);
     closeConflictModal();
     openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+  }
+}
+
+function openBlockingLoadingModal(titleText, messageText) {
+  hideToast();
+  resetPullRefreshVisual();
+
+  isConflictReloading = true;
+
+  const title = document.getElementById("conflictTitle");
+  const message = document.getElementById("conflictMessage");
+  const actions = document.getElementById("conflictActions");
+
+  if (title) {
+    title.textContent = titleText || "処理中";
+  }
+
+  if (message) {
+    const safeMessage = escapeHtml(messageText || "しばらくお待ちください。");
+    message.innerHTML = '<span class="inline-spinner" aria-hidden="true"></span><span>' + safeMessage + '</span>';
+    message.classList.add("loading-message");
+  }
+
+  if (actions) {
+    actions.style.display = "none";
+  }
+
+  document.getElementById("conflictModal").classList.add("show");
+}
+
+function closeBlockingLoadingModal() {
+  if (isConflictReloading) {
+    closeConflictModal();
   }
 }
 
@@ -3444,33 +3495,125 @@ function scheduleBackgroundReturnCheck(delay = 180) {
   }, delay);
 }
 
-function handleBackgroundReturnAfterSave() {
-  if (!wentBackgroundWhileSaving) return;
+function getResponseVersion(response) {
+  if (response && !Array.isArray(response) && response.version !== undefined) {
+    const version = Number(response.version);
+    return Number.isFinite(version) ? version : 0;
+  }
+  return 0;
+}
+
+function getPendingBackgroundRequestsForCheck() {
+  if (typeof pendingUpdateAction === "function" && Array.isArray(pendingUpdateAction._pendingRequests)) {
+    return clonePendingRequests(pendingUpdateAction._pendingRequests);
+  }
+
+  if (pendingSpareChanges.size > 0) {
+    const changes = buildSpareChangesPayload(pendingSpareChanges);
+    return [{
+      mutation: buildSaveMutation("updateSpares", { changes: changes }),
+      force: false
+    }];
+  }
+
+  if (immediateSaveQueue.length > 0) {
+    return clonePendingRequests(immediateSaveQueue);
+  }
+
+  return [];
+}
+
+async function retryPendingWorkAfterBackground() {
+  if (typeof pendingUpdateAction === "function") {
+    const action = pendingUpdateAction;
+    pendingUpdateAction = null;
+    pendingUpdateErrorCode = "";
+    await Promise.resolve(action());
+    return;
+  }
+
+  if (pendingSpareChanges.size > 0 || spareSaveTimer) {
+    await flushSpareChanges();
+    return;
+  }
+
+  if (immediateSaveQueue.length > 0 && !isImmediateSaveRunning) {
+    await runImmediateSaveRequests();
+  }
+}
+
+function isModalVisible(id) {
+  const modal = document.getElementById(id);
+  return !!(modal && modal.classList.contains("show"));
+}
+
+async function handleBackgroundReturnAfterSave() {
+  if (!wentBackgroundWhileSaving || isBackgroundSaveRecoveryRunning) return;
 
   if (isAnySaveRunningNow()) {
     scheduleBackgroundReturnCheck(800);
     return;
   }
 
+  const baseVersionAtReturn = serverVersion || 0;
+  const pendingRequests = getPendingBackgroundRequestsForCheck();
+
+  if (pendingRequests.length === 0 && !hasPendingSaveWork() && typeof pendingUpdateAction !== "function") {
+    wentBackgroundWhileSaving = false;
+    return;
+  }
+
+  isBackgroundSaveRecoveryRunning = true;
   wentBackgroundWhileSaving = false;
+  openBlockingLoadingModal("保存確認中", "保存状態を確認しています。");
 
-  if (document.getElementById("conflictModal") && document.getElementById("conflictModal").classList.contains("show") && !isConflictReloading) {
-    loadLatestFromConflict();
-    return;
-  }
+  try {
+    const response = await requestJsonp({});
+    const latestItems = getItemsFromLoadResponse(response);
+    const latestVersion = getResponseVersion(response);
 
-  if (typeof pendingUpdateAction === "function") {
-    retryPendingUpdate();
-    return;
-  }
+    if (pendingRequests.length > 0 && arePendingRequestsAlreadyApplied(pendingRequests, latestItems)) {
+      applyLoadedItemsResponse(response);
+      closeBlockingLoadingModal();
+      showToast("保存状態を確認しました");
+      return;
+    }
 
-  if (pendingSpareChanges.size > 0 && !spareSaveTimer && !isSpareBatchSaveRunning) {
-    flushSpareChanges();
-    return;
-  }
+    if (latestVersion > 0 && latestVersion !== baseVersionAtReturn) {
+      applyLoadedItemsResponse(response);
+      closeBlockingLoadingModal();
+      showToast("最新状態にしました");
+      return;
+    }
 
-  if (immediateSaveQueue.length > 0 && !isImmediateSaveRunning) {
-    runImmediateSaveRequests();
+    applyServerVersionFromLoadResponse(response);
+    await retryPendingWorkAfterBackground();
+
+    if (isModalVisible("conflictModal") && !isConflictReloading) {
+      await loadLatestFromConflict();
+      return;
+    }
+
+    if (!isModalVisible("updateRetryModal") && isConflictReloading) {
+      closeBlockingLoadingModal();
+    }
+  } catch (error) {
+    console.error(error);
+    closeBlockingLoadingModal();
+
+    if (typeof pendingUpdateAction !== "function" && (pendingSpareChanges.size > 0 || immediateSaveQueue.length > 0 || spareSaveTimer)) {
+      pendingUpdateAction = () => retryPendingWorkAfterBackground();
+      pendingUpdateAction._actionName = "backgroundSaveRecovery";
+      pendingUpdateAction._pendingRequests = clonePendingRequests(pendingRequests);
+    }
+
+    if (typeof pendingUpdateAction === "function") {
+      openUpdateRetryModal(error && error.code ? error.code : "N01");
+    } else {
+      openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+    }
+  } finally {
+    isBackgroundSaveRecoveryRunning = false;
   }
 }
 
