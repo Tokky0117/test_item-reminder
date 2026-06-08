@@ -15,7 +15,7 @@
     <div class="startup-card">
       <div class="startup-visual" id="startupVisual" aria-hidden="true"></div>
       <div class="startup-title" id="startupTitle">日用品リスト</div>
-      <div class="startup-version" id="startupVersion">ver2.1.10</div>
+      <div class="startup-version" id="startupVersion">ver2.1.11</div>
       <div class="startup-message" id="startupMessage"></div>
       <button class="startup-start-button" id="startupStartButton" data-action="start-title">スタート</button>
     </div>
@@ -162,22 +162,21 @@
   <div class="modal-backdrop" id="updateRetryModal">
     <div class="modal">
       <h2>更新失敗</h2>
-      <div class="confirm-message" id="updateRetryMessage">サーバーへの更新に失敗しました。
-画面上の変更はまだ保存されていません。</div>
+      <div class="confirm-message" id="updateRetryMessage">保存結果を確認できませんでした。
+通信状況を確認して、再更新してください。</div>
       <div class="modal-actions retry-actions">
-        <button class="cancel-button" data-action="cancel-pending-update">更新をキャンセル</button>
-        <button class="confirm-button" data-action="retry-pending-update">再試行</button>
+        <button class="cancel-button" data-action="cancel-pending-update">最新を読み込む</button>
+        <button class="confirm-button" data-action="retry-pending-update">再更新</button>
       </div>
     </div>
   </div>
 
   <div class="modal-backdrop" id="conflictModal">
     <div class="modal">
-      <h2 id="conflictTitle">更新確認</h2>
-      <div class="confirm-message" id="conflictMessage">他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。</div>
+      <h2 id="conflictTitle">他の端末で更新されています</h2>
+      <div class="confirm-message" id="conflictMessage">他の端末でリストが更新されています。<br>最新リストを読み込んでください。</div>
       <div class="modal-actions conflict-actions" id="conflictActions">
-        <button class="cancel-button" data-action="load-latest-conflict">更新をキャンセル</button>
-        <button class="confirm-button" data-action="force-pending-conflict">更新する</button>
+        <button class="confirm-button" data-action="load-latest-conflict">最新を読み込む</button>
       </div>
     </div>
   </div>
