@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.10";
+const APP_VERSION = "2.1.11";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -133,6 +133,8 @@ let lastSavePayloadLength = 0;
 
 let safeActionTouch = null;
 let suppressNativeClickUntil = 0;
+let wentBackgroundWhileSaving = false;
+let backgroundReturnCheckTimer = null;
 
 
 // ========================================
@@ -1211,8 +1213,7 @@ async function flushSpareChanges(force = false) {
     }
 
     if (isConflictResult(result)) {
-      pendingConflictAction = () => saveSpareChangesFromPendingAction(changes, true);
-      pendingConflictAction._actionName = "updateSpares";
+      pendingConflictAction = null;
       openConflictModal();
       return false;
     }
@@ -1257,8 +1258,7 @@ async function saveSpareChangesFromPendingAction(changes, force = false) {
     }
 
     if (isConflictResult(result)) {
-      pendingConflictAction = () => saveSpareChangesFromPendingAction(changes, true);
-      pendingConflictAction._actionName = "updateSpares";
+      pendingConflictAction = null;
       openConflictModal();
       return;
     }
@@ -1366,10 +1366,9 @@ async function runImmediateSaveRequests(requests) {
       if (isOkResult(result)) {
         applySaveSuccess(result);
       } else if (isConflictResult(result)) {
-        const remainingRequests = [currentRequest, ...requestQueue, ...immediateSaveQueue];
         immediateSaveQueue = [];
         immediateSaveQueued = false;
-        pendingConflictAction = createPendingImmediateRequestsAction(remainingRequests, true);
+        pendingConflictAction = null;
         openConflictModal();
         return;
       } else {
@@ -1440,7 +1439,7 @@ async function commitModeAndExit(successMessage, force = false) {
 
     if (isConflictResult(result)) {
       setModeSaving(false);
-      pendingConflictAction = () => commitModeAndExit(successMessage, true);
+      pendingConflictAction = null;
       openConflictModal();
       return;
     }
@@ -1934,8 +1933,8 @@ function renderEmptyShoppingMessage(container) {
   const empty = document.createElement("div");
   empty.className = "empty-list-message";
   empty.textContent = activeOwnerTab === "all"
-    ? "補充するものはありません"
-    : getOwnerName(activeOwnerTab) + "の補充するものはありません";
+    ? "不足しているものはありません"
+    : getOwnerName(activeOwnerTab) + "の不足しているものはありません";
   container.appendChild(empty);
 }
 
@@ -2048,8 +2047,8 @@ function createShoppingCheckHtml(item, index) {
 }
 
 function createStockToggleHtml(item, index) {
-  const label = item.hasSpare ? "補充対象にする" : "補充";
-  const text = item.hasSpare ? "" : "補充";
+  const label = item.hasSpare ? "不足にする" : "ありにする";
+  const text = item.hasSpare ? "あり" : "不足";
   const className = item.hasSpare ? "has-spare" : "no-spare";
 
   return `
@@ -2829,7 +2828,7 @@ async function copyShoppingList(event) {
   const targetItems = getShoppingCopyItems();
 
   if (targetItems.length === 0) {
-    showToast("コピーする補充リストがありません");
+    showToast("コピーするものがありません");
     return;
   }
 
@@ -3297,14 +3296,8 @@ function retryPendingUpdate() {
 
   if (typeof pendingUpdateAction === "function") {
     const action = pendingUpdateAction;
-    const errorCode = pendingUpdateErrorCode;
     pendingUpdateAction = null;
     pendingUpdateErrorCode = "";
-
-    if (shouldCheckLatestBeforeRetry(errorCode) && Array.isArray(action._pendingRequests)) {
-      retryPendingRequestsAfterLatestCheck(action._pendingRequests, action);
-      return;
-    }
 
     action();
   }
@@ -3323,7 +3316,7 @@ async function cancelPendingUpdate() {
   try {
     await loadLatestItemsForConflictCancel();
     closeConflictModal();
-    showToast("更新をキャンセルし、最新リストを読み込みました");
+    showToast("最新状態に戻しました");
   } catch (error) {
     console.error(error);
     closeConflictModal();
@@ -3338,7 +3331,7 @@ function setConflictModalLoading(isLoading) {
   const actions = document.getElementById("conflictActions");
 
   if (title) {
-    title.textContent = isLoading ? "更新キャンセル" : "更新確認";
+    title.textContent = isLoading ? "最新読み込み" : "他の端末で更新されています";
   }
 
   if (message) {
@@ -3346,7 +3339,7 @@ function setConflictModalLoading(isLoading) {
       message.innerHTML = '<span class="inline-spinner" aria-hidden="true"></span><span>最新リストを読み込んでいます。</span>';
       message.classList.add("loading-message");
     } else {
-      message.innerHTML = "他の端末でリストが更新されています。<br>更新すると、他の端末の変更が上書きされる可能性があります。";
+      message.innerHTML = "他の端末でリストが更新されています。<br>最新リストを読み込んでください。";
       message.classList.remove("loading-message");
     }
   }
@@ -3385,13 +3378,7 @@ async function loadLatestFromConflict() {
 }
 
 function forcePendingConflictSave() {
-  closeConflictModal();
-
-  if (typeof pendingConflictAction === "function") {
-    const action = pendingConflictAction;
-    pendingConflictAction = null;
-    action();
-  }
+  loadLatestFromConflict();
 }
 
 function openLoadFailureModal(message) {
@@ -3435,6 +3422,70 @@ function showTitleScreen(options = {}) {
     screen.classList.remove("hide");
     screen.classList.remove("show-toast");
   }
+}
+
+function isAnySaveRunningNow() {
+  return isImmediateSaveRunning || isSpareBatchSaveRunning || isModeSaving;
+}
+
+function rememberBackgroundSaveState() {
+  if (hasPendingSaveWork() || isModeSaving || typeof pendingUpdateAction === "function") {
+    wentBackgroundWhileSaving = true;
+  }
+}
+
+function scheduleBackgroundReturnCheck(delay = 180) {
+  if (backgroundReturnCheckTimer) {
+    clearTimeout(backgroundReturnCheckTimer);
+  }
+  backgroundReturnCheckTimer = setTimeout(() => {
+    backgroundReturnCheckTimer = null;
+    handleBackgroundReturnAfterSave();
+  }, delay);
+}
+
+function handleBackgroundReturnAfterSave() {
+  if (!wentBackgroundWhileSaving) return;
+
+  if (isAnySaveRunningNow()) {
+    scheduleBackgroundReturnCheck(800);
+    return;
+  }
+
+  wentBackgroundWhileSaving = false;
+
+  if (document.getElementById("conflictModal") && document.getElementById("conflictModal").classList.contains("show") && !isConflictReloading) {
+    loadLatestFromConflict();
+    return;
+  }
+
+  if (typeof pendingUpdateAction === "function") {
+    retryPendingUpdate();
+    return;
+  }
+
+  if (pendingSpareChanges.size > 0 && !spareSaveTimer && !isSpareBatchSaveRunning) {
+    flushSpareChanges();
+    return;
+  }
+
+  if (immediateSaveQueue.length > 0 && !isImmediateSaveRunning) {
+    runImmediateSaveRequests();
+  }
+}
+
+function setupBackgroundSaveRecovery() {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) {
+      rememberBackgroundSaveState();
+      return;
+    }
+
+    scheduleBackgroundReturnCheck();
+  });
+
+  window.addEventListener("pagehide", rememberBackgroundSaveState);
+  window.addEventListener("pageshow", () => scheduleBackgroundReturnCheck());
 }
 
 function returnToTitleFromLoadFailure() {
@@ -3490,6 +3541,7 @@ setupStartupScreen();
 startStartupToastTimer();
 setupPullToRefresh();
 setupSwipeCloseGuards();
+setupBackgroundSaveRecovery();
 loadItems();
 
 // ========================================
