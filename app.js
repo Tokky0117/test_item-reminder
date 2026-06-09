@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "3.0.0";
+const APP_VERSION = "3.0.2";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -1024,27 +1024,18 @@ function requestJsonp(params) {
   });
 }
 
-function buildSavePayload(force) {
-  return {
-    action: "saveAll",
-    baseVersion: serverVersion || 0,
-    force: force === true,
-    items: items
-  };
-}
-
 function getSavePayloadText(force) {
-  return JSON.stringify(buildSavePayload(force));
+  return "";
 }
 
 function isLargeSavePayload() {
-  return lastSavePayloadLength >= SAVE_PAYLOAD_WARNING_LENGTH;
+  return false;
 }
 
 function createSavePayload(action, data = {}, force = false, requestMeta = {}) {
   return {
     ...data,
-    action: action || "saveAll",
+    action: action,
     baseVersion: serverVersion || 0,
     force: force === true,
     clientId: requestMeta.clientId || getClientId(),
@@ -1089,18 +1080,15 @@ function buildSaveMutation(action, data = {}) {
 async function saveItemsToServer(options = {}) {
   const force = options.force === true;
   const mutation = options.mutation || null;
-  const action = mutation && mutation.action ? mutation.action : "saveAll";
+  const action = mutation && mutation.action ? mutation.action : "";
+  if (!mutation || !action) {
+    throw createSaveError({ status: "error", code: "D01", message: "Missing save action" }, "保存処理が不正です", "D01");
+  }
   const requestMeta = {
     clientId: options.clientId || getClientId(),
     requestId: options.requestId || createRequestId()
   };
-  const payload = mutation
-    ? createSavePayload(action, mutation, force, requestMeta)
-    : {
-        ...buildSavePayload(force),
-        clientId: requestMeta.clientId,
-        requestId: requestMeta.requestId
-      };
+  const payload = createSavePayload(action, mutation, force, requestMeta);
 
   const payloadText = JSON.stringify(payload);
   lastSavePayloadLength = payloadText.length;
@@ -1212,7 +1200,7 @@ function scheduleSpareSave(id, hasSpare) {
   updateSaveStatusIndicator();
 }
 
-async function createSpareChangesRequest(changes, force = false) {
+function createSpareChangesRequest(changes, force = false) {
   const mutation = buildSaveMutation("updateSpares", {
     changes: changes
   });
@@ -1342,7 +1330,7 @@ async function saveSpareChangesFromPendingAction(request) {
 }
 
 function getMutationActionName(mutation) {
-  return mutation && mutation.action ? String(mutation.action) : "saveAll";
+  return mutation && mutation.action ? String(mutation.action) : "unknown";
 }
 
 function createPendingUpdateAction(mutation, force) {
