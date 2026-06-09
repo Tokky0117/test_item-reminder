@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "2.1.12";
+const APP_VERSION = "3.0.0";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -16,6 +16,49 @@ const SWIPE_CLOSE_THRESHOLD = 24;
 const BUTTON_TAP_MOVE_CANCEL_DISTANCE = 12;
 const SPARE_SAVE_DEBOUNCE_MS = 800;
 const SAVE_TIMEOUT_MS = 15000;
+
+const CLIENT_ID_STORAGE_KEY = "dailyReminderClientId";
+
+function getClientId() {
+  try {
+    let clientId = localStorage.getItem(CLIENT_ID_STORAGE_KEY);
+    if (!clientId) {
+      clientId = "c_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10);
+      localStorage.setItem(CLIENT_ID_STORAGE_KEY, clientId);
+    }
+    return clientId;
+  } catch (error) {
+    return "c_session_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 10);
+  }
+}
+
+function createRequestId() {
+  return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
+}
+
+function createSaveRequest(mutation, force = false) {
+  return {
+    mutation: mutation || null,
+    force: force === true,
+    clientId: getClientId(),
+    requestId: createRequestId()
+  };
+}
+
+function ensureSaveRequest(request) {
+  const source = request || {};
+  return {
+    mutation: source.mutation || null,
+    force: source.force === true,
+    clientId: source.clientId || getClientId(),
+    requestId: source.requestId || createRequestId()
+  };
+}
+
+function cloneSaveRequest(request) {
+  return ensureSaveRequest(request);
+}
+
 
 const REORDER_HOLD_MS = 520;
 const COPY_FEEDBACK_MS = 1400;
@@ -823,10 +866,7 @@ function arePendingRequestsAlreadyApplied(requests, sourceItems) {
 }
 
 function clonePendingRequests(requests) {
-  return (requests || []).filter(Boolean).map(request => ({
-    mutation: request.mutation || null,
-    force: request.force === true
-  }));
+  return (requests || []).filter(Boolean).map(request => cloneSaveRequest(request));
 }
 
 function shouldCheckLatestBeforeRetry(errorCode) {
@@ -1001,12 +1041,14 @@ function isLargeSavePayload() {
   return lastSavePayloadLength >= SAVE_PAYLOAD_WARNING_LENGTH;
 }
 
-function createSavePayload(action, data = {}, force = false) {
+function createSavePayload(action, data = {}, force = false, requestMeta = {}) {
   return {
     ...data,
     action: action || "saveAll",
     baseVersion: serverVersion || 0,
-    force: force === true
+    force: force === true,
+    clientId: requestMeta.clientId || getClientId(),
+    requestId: requestMeta.requestId || createRequestId()
   };
 }
 
@@ -1048,9 +1090,17 @@ async function saveItemsToServer(options = {}) {
   const force = options.force === true;
   const mutation = options.mutation || null;
   const action = mutation && mutation.action ? mutation.action : "saveAll";
+  const requestMeta = {
+    clientId: options.clientId || getClientId(),
+    requestId: options.requestId || createRequestId()
+  };
   const payload = mutation
-    ? createSavePayload(action, mutation, force)
-    : buildSavePayload(force);
+    ? createSavePayload(action, mutation, force, requestMeta)
+    : {
+        ...buildSavePayload(force),
+        clientId: requestMeta.clientId,
+        requestId: requestMeta.requestId
+      };
 
   const payloadText = JSON.stringify(payload);
   lastSavePayloadLength = payloadText.length;
@@ -1059,7 +1109,19 @@ async function saveItemsToServer(options = {}) {
     action: action,
     baseVersion: String(serverVersion || 0),
     force: force ? "true" : "false",
+    clientId: requestMeta.clientId,
+    requestId: requestMeta.requestId,
     payload: payloadText
+  });
+}
+
+function saveRequestToServer(request) {
+  const safeRequest = ensureSaveRequest(request);
+  return saveItemsToServer({
+    mutation: safeRequest.mutation,
+    force: safeRequest.force,
+    clientId: safeRequest.clientId,
+    requestId: safeRequest.requestId
   });
 }
 
@@ -1150,12 +1212,15 @@ function scheduleSpareSave(id, hasSpare) {
   updateSaveStatusIndicator();
 }
 
-async function saveSpareChanges(changes, force = false) {
+async function createSpareChangesRequest(changes, force = false) {
   const mutation = buildSaveMutation("updateSpares", {
     changes: changes
   });
+  return createSaveRequest(mutation, force);
+}
 
-  return saveItemsToServer({ mutation: mutation, force: force });
+function saveSpareChangesRequest(request) {
+  return saveRequestToServer(request);
 }
 
 function createDeferredPromise() {
@@ -1197,6 +1262,7 @@ async function flushSpareChanges(force = false) {
   }
 
   const changes = buildSpareChangesPayload(pendingSpareChanges);
+  const request = createSpareChangesRequest(changes, force);
   pendingSpareChanges.clear();
   isSpareBatchSaveRunning = true;
   const spareBatchDeferred = createDeferredPromise();
@@ -1205,7 +1271,7 @@ async function flushSpareChanges(force = false) {
   updateSaveStatusIndicator();
 
   try {
-    const result = await saveSpareChanges(changes, force);
+    const result = await saveSpareChangesRequest(request);
 
     if (isOkResult(result)) {
       applySaveSuccess(result);
@@ -1222,12 +1288,9 @@ async function flushSpareChanges(force = false) {
     throw createSaveError(result, "保存に失敗しました", "S01");
   } catch (error) {
     console.error(error);
-    pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
+    pendingUpdateAction = () => saveSpareChangesFromPendingAction(request);
     pendingUpdateAction._actionName = "updateSpares";
-    pendingUpdateAction._pendingRequests = [{
-      mutation: buildSaveMutation("updateSpares", { changes: changes }),
-      force: force === true
-    }];
+    pendingUpdateAction._pendingRequests = [cloneSaveRequest(request)];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
     return false;
   } finally {
@@ -1246,12 +1309,13 @@ async function flushSpareChanges(force = false) {
   }
 }
 
-async function saveSpareChangesFromPendingAction(changes, force = false) {
+async function saveSpareChangesFromPendingAction(request) {
+  const safeRequest = cloneSaveRequest(request);
   isSpareBatchSaveRunning = true;
   updateSaveStatusIndicator();
 
   try {
-    const result = await saveSpareChanges(changes, force);
+    const result = await saveSpareChangesRequest(safeRequest);
 
     if (isOkResult(result)) {
       applySaveSuccess(result);
@@ -1267,12 +1331,9 @@ async function saveSpareChangesFromPendingAction(changes, force = false) {
     throw createSaveError(result, "保存に失敗しました", "S01");
   } catch (error) {
     console.error(error);
-    pendingUpdateAction = () => saveSpareChangesFromPendingAction(changes, force);
+    pendingUpdateAction = () => saveSpareChangesFromPendingAction(safeRequest);
     pendingUpdateAction._actionName = "updateSpares";
-    pendingUpdateAction._pendingRequests = [{
-      mutation: buildSaveMutation("updateSpares", { changes: changes }),
-      force: force === true
-    }];
+    pendingUpdateAction._pendingRequests = [cloneSaveRequest(safeRequest)];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   } finally {
     isSpareBatchSaveRunning = false;
@@ -1285,22 +1346,21 @@ function getMutationActionName(mutation) {
 }
 
 function createPendingUpdateAction(mutation, force) {
-  const request = {
-    mutation: mutation || null,
-    force: force === true
-  };
+  const request = createSaveRequest(mutation || null, force);
   const action = () => runImmediateSaveRequests([request]);
   action._actionName = getMutationActionName(mutation);
+  action._pendingRequests = [cloneSaveRequest(request)];
   return action;
 }
 
 function createPendingImmediateRequestsAction(requests, forceOverride = null) {
   const retryRequests = requests
     .filter(request => request)
-    .map(request => ({
-      mutation: request.mutation || null,
-      force: forceOverride === null ? request.force === true : forceOverride === true
-    }));
+    .map(request => {
+      const safeRequest = cloneSaveRequest(request);
+      safeRequest.force = forceOverride === null ? safeRequest.force === true : forceOverride === true;
+      return safeRequest;
+    });
 
   const action = () => runImmediateSaveRequests(retryRequests);
   const firstMutation = retryRequests.length > 0 ? retryRequests[0].mutation : null;
@@ -1326,10 +1386,7 @@ function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
 async function runImmediateSaveRequests(requests) {
   const requestQueue = requests
     .filter(request => request)
-    .map(request => ({
-      mutation: request.mutation || null,
-      force: request.force === true
-    }));
+    .map(request => cloneSaveRequest(request));
 
   if (requestQueue.length === 0) return;
 
@@ -1361,8 +1418,7 @@ async function runImmediateSaveRequests(requests) {
       immediateSaveQueued = immediateSaveQueue.length > 0 || requestQueue.length > 0;
 
       const mutation = currentRequest.mutation;
-      const force = currentRequest.force === true;
-      const result = await saveItemsToServer({ mutation: mutation, force: force });
+      const result = await saveRequestToServer(currentRequest);
 
       if (isOkResult(result)) {
         applySaveSuccess(result);
@@ -1399,15 +1455,12 @@ async function runImmediateSaveRequests(requests) {
 
 async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
   const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
-  const firstRequest = {
-    mutation: args.mutation,
-    force: args.force
-  };
+  const firstRequest = createSaveRequest(args.mutation, args.force);
 
   return runImmediateSaveRequests([firstRequest]);
 }
 
-async function commitModeAndExit(successMessage, force = false) {
+async function commitModeAndExit(successMessage, force = false, existingRequest = null) {
   if (!hasModeChanges()) return;
   if (isModeSaving) return;
 
@@ -1416,13 +1469,14 @@ async function commitModeAndExit(successMessage, force = false) {
     return item && item.hasSpare === true;
   });
 
+  const request = existingRequest
+    ? cloneSaveRequest(existingRequest)
+    : createSaveRequest(buildSaveMutation("completePurchase", { ids: purchaseIds }), force);
+
   setModeSaving(true);
 
   try {
-    const mutation = buildSaveMutation("completePurchase", {
-      ids: purchaseIds
-    });
-    const result = await saveItemsToServer({ mutation: mutation, force: force });
+    const result = await saveRequestToServer(request);
 
     if (isOkResult(result)) {
       applySaveSuccess(result);
@@ -1449,12 +1503,9 @@ async function commitModeAndExit(successMessage, force = false) {
   } catch (error) {
     console.error(error);
     setModeSaving(false);
-    pendingUpdateAction = () => commitModeAndExit(successMessage, force);
+    pendingUpdateAction = () => commitModeAndExit(successMessage, force, request);
     pendingUpdateAction._actionName = "completePurchase";
-    pendingUpdateAction._pendingRequests = [{
-      mutation: buildSaveMutation("completePurchase", { ids: purchaseIds }),
-      force: force === true
-    }];
+    pendingUpdateAction._pendingRequests = [cloneSaveRequest(request)];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
   }
 }
@@ -3538,7 +3589,10 @@ async function retryPendingWorkAfterBackground() {
   }
 
   if (immediateSaveQueue.length > 0 && !isImmediateSaveRunning) {
-    await runImmediateSaveRequests();
+    const queuedRequests = clonePendingRequests(immediateSaveQueue);
+    immediateSaveQueue = [];
+    immediateSaveQueued = false;
+    await runImmediateSaveRequests(queuedRequests);
   }
 }
 
@@ -3555,38 +3609,16 @@ async function handleBackgroundReturnAfterSave() {
     return;
   }
 
-  const baseVersionAtReturn = serverVersion || 0;
-  const pendingRequests = getPendingBackgroundRequestsForCheck();
-
-  if (pendingRequests.length === 0 && !hasPendingSaveWork() && typeof pendingUpdateAction !== "function") {
+  if (!hasPendingSaveWork() && typeof pendingUpdateAction !== "function") {
     wentBackgroundWhileSaving = false;
     return;
   }
 
   isBackgroundSaveRecoveryRunning = true;
   wentBackgroundWhileSaving = false;
-  openBlockingLoadingModal("保存確認中", "保存状態を確認しています。");
+  openBlockingLoadingModal("保存確認中", "保存中の変更を確認しています。");
 
   try {
-    const response = await requestJsonp({});
-    const latestItems = getItemsFromLoadResponse(response);
-    const latestVersion = getResponseVersion(response);
-
-    if (pendingRequests.length > 0 && arePendingRequestsAlreadyApplied(pendingRequests, latestItems)) {
-      applyLoadedItemsResponse(response);
-      closeBlockingLoadingModal();
-      showToast("保存状態を確認しました");
-      return;
-    }
-
-    if (latestVersion > 0 && latestVersion !== baseVersionAtReturn) {
-      applyLoadedItemsResponse(response);
-      closeBlockingLoadingModal();
-      showToast("最新状態にしました");
-      return;
-    }
-
-    applyServerVersionFromLoadResponse(response);
     await retryPendingWorkAfterBackground();
 
     if (isModalVisible("conflictModal") && !isConflictReloading) {
@@ -3594,18 +3626,12 @@ async function handleBackgroundReturnAfterSave() {
       return;
     }
 
-    if (!isModalVisible("updateRetryModal") && isConflictReloading) {
+    if (!isModalVisible("updateRetryModal")) {
       closeBlockingLoadingModal();
     }
   } catch (error) {
     console.error(error);
     closeBlockingLoadingModal();
-
-    if (typeof pendingUpdateAction !== "function" && (pendingSpareChanges.size > 0 || immediateSaveQueue.length > 0 || spareSaveTimer)) {
-      pendingUpdateAction = () => retryPendingWorkAfterBackground();
-      pendingUpdateAction._actionName = "backgroundSaveRecovery";
-      pendingUpdateAction._pendingRequests = clonePendingRequests(pendingRequests);
-    }
 
     if (typeof pendingUpdateAction === "function") {
       openUpdateRetryModal(error && error.code ? error.code : "N01");
