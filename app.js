@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "3.0.6";
+const APP_VERSION = "3.0.7";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 
@@ -1364,7 +1364,19 @@ async function commitModeAndExit(successMessage, existingRequest = null) {
   }
 }
 
+function restoreShoppingModeDraftChanges() {
+  if (!shoppingMode || shoppingModeItemIds.size === 0) return;
+
+  const targetIds = new Set(shoppingModeItemIds);
+  items = items.map(item => {
+    if (!targetIds.has(item.id)) return item;
+    if (item.hasSpare === false) return item;
+    return { ...item, hasSpare: false };
+  });
+}
+
 function exitModeWithoutSaving() {
+  restoreShoppingModeDraftChanges();
   shoppingMode = false;
   isModeSaving = false;
   shoppingModeItemIds.clear();
