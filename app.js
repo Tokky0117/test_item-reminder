@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "3.0.5";
+const APP_VERSION = "3.0.6";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 
@@ -66,10 +66,10 @@ const REORDER_AUTO_SCROLL_MAX_SPEED = 9;
 const ORDER_STEP = 1;
 
 const OWNER_TABS = [
-  { key: "共", full: "共同", short: "共" },
-  { key: "み", full: "みゆう", short: "み" },
-  { key: "か", full: "かずまさ", short: "か" },
-  { key: "all", full: "すべて", short: "全" }
+  { key: "共", full: "共同" },
+  { key: "み", full: "みゆう" },
+  { key: "か", full: "かずまさ" },
+  { key: "all", full: "すべて" }
 ];
 
 const OWNER_OPTIONS = [
@@ -143,7 +143,6 @@ let modalCategory = "other";
 let isCategoryPickerOpen = false;
 let isOwnerPickerOpen = false;
 
-let modeStartItems = null;
 let pendingUpdateAction = null;
 let pendingUpdateErrorCode = "";
 let pendingConflictAction = null;
@@ -481,10 +480,6 @@ function cloneItems(sourceItems) {
   return JSON.parse(JSON.stringify(sourceItems));
 }
 
-function areItemsSame(a, b) {
-  return JSON.stringify(a || []) === JSON.stringify(b || []);
-}
-
 function areArraysSame(a, b) {
   if (!Array.isArray(a) || !Array.isArray(b)) return false;
   if (a.length !== b.length) return false;
@@ -494,11 +489,6 @@ function areArraysSame(a, b) {
   }
 
   return true;
-}
-
-function hasModeChanges() {
-  if (!modeStartItems) return false;
-  return !areItemsSame(items, modeStartItems);
 }
 
 function setOwnerTab(tabKey) {
@@ -545,7 +535,7 @@ function renderOwnerTabs() {
 
     button.type = "button";
     button.className = `owner-tab ${stockClass} ${isActive ? "active" : ""}`;
-    button.textContent = isActive ? tab.full : tab.short;
+    button.textContent = tab.full;
     button.setAttribute("aria-label", tab.full);
     button.disabled = isModeSaving || isReordering || isRefreshing;
     button.dataset.action = "set-owner-tab";
@@ -761,7 +751,6 @@ function resetModesAndSelections() {
   shoppingModeItemIds.clear();
   shoppingMode = false;
   isModeSaving = false;
-  modeStartItems = null;
   swipedItemId = null;
   resetPullRefreshVisual();
 }
@@ -1326,13 +1315,14 @@ async function saveImmediateChange(mutation = null) {
 }
 
 async function commitModeAndExit(successMessage, existingRequest = null) {
-  if (!hasModeChanges()) return;
   if (isModeSaving) return;
 
   const purchaseIds = Array.from(shoppingModeItemIds).filter(id => {
     const item = items.find(item => item.id === id);
     return item && item.hasSpare === true;
   });
+
+  if (!existingRequest && purchaseIds.length === 0) return;
 
   const request = existingRequest
     ? cloneSaveRequest(existingRequest)
@@ -1349,7 +1339,6 @@ async function commitModeAndExit(successMessage, existingRequest = null) {
       shoppingMode = false;
       isModeSaving = false;
       shoppingModeItemIds.clear();
-      modeStartItems = null;
       resetPullRefreshVisual();
       render();
 
@@ -1379,7 +1368,6 @@ function exitModeWithoutSaving() {
   shoppingMode = false;
   isModeSaving = false;
   shoppingModeItemIds.clear();
-  modeStartItems = null;
   resetPullRefreshVisual();
   render();
 }
@@ -2777,7 +2765,6 @@ function toggleShoppingMode() {
   closeSwipedItemWithoutRender();
 
   shoppingMode = true;
-  modeStartItems = cloneItems(items);
   resetPullRefreshVisual();
 
   shoppingModeItemIds = new Set(
@@ -3147,7 +3134,7 @@ function openHomeCancelConfirm() {
   if (isModeSaving) return;
   if (!shoppingMode) return;
 
-  if (!hasModeChanges()) {
+  if (getCheckedShoppingItemCount() === 0) {
     exitModeWithoutSaving();
     return;
   }
@@ -3169,10 +3156,6 @@ function confirmHomeCancel() {
   if (isModeSaving) return;
 
   closeHomeCancelConfirm();
-
-  if (modeStartItems) {
-    items = cloneItems(modeStartItems);
-  }
 
   exitModeWithoutSaving();
 }
