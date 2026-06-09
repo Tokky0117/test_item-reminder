@@ -1,10 +1,9 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "3.0.3";
+const APP_VERSION = "3.0.4";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
-const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
 
 const REFRESH_OFFSET = 56;
 const PULL_TRIGGER_DISTANCE = 72;
@@ -36,10 +35,9 @@ function createRequestId() {
   return "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 12);
 }
 
-function createSaveRequest(mutation, force = false) {
+function createSaveRequest(mutation) {
   return {
     mutation: mutation || null,
-    force: force === true,
     clientId: getClientId(),
     requestId: createRequestId()
   };
@@ -49,7 +47,6 @@ function ensureSaveRequest(request) {
   const source = request || {};
   return {
     mutation: source.mutation || null,
-    force: source.force === true,
     clientId: source.clientId || getClientId(),
     requestId: source.requestId || createRequestId()
   };
@@ -172,7 +169,6 @@ let isPulling = false;
 
 let isLoadFailureModalOpen = false;
 let isConflictReloading = false;
-let lastSavePayloadLength = 0;
 
 let safeActionTouch = null;
 let suppressNativeClickUntil = 0;
@@ -295,9 +291,6 @@ function executeSafeAction(element, event) {
       break;
     case "load-latest-conflict":
       loadLatestFromConflict();
-      break;
-    case "force-pending-conflict":
-      forcePendingConflictSave();
       break;
     case "return-title-load-failure":
       returnToTitleFromLoadFailure();
@@ -795,123 +788,6 @@ function applyLoadedItemsResponse(response) {
 }
 
 
-function getItemsFromLoadResponse(response) {
-  const loadedItems = Array.isArray(response) ? response : (response && response.items || []);
-  return normalizeItems(loadedItems);
-}
-
-function applyServerVersionFromLoadResponse(response) {
-  if (!Array.isArray(response) && response && response.version !== undefined) {
-    serverVersion = Number(response.version) || 0;
-  }
-}
-
-function findItemInList(sourceItems, id) {
-  return sourceItems.find(item => String(item.id) === String(id));
-}
-
-function normalizeSingleItemForCompare(item) {
-  return normalizeItems([item || {}])[0] || null;
-}
-
-function isSameItemForSave(a, b) {
-  if (!a || !b) return false;
-  return String(a.id || "") === String(b.id || "") &&
-    String(a.name || "") === String(b.name || "") &&
-    (a.hasSpare === true) === (b.hasSpare === true) &&
-    String(a.note || "") === String(b.note || "") &&
-    String(a.icon || "共") === String(b.icon || "共") &&
-    String(a.category || "other") === String(b.category || "other") &&
-    Number(a.categoryOrder || 0) === Number(b.categoryOrder || 0);
-}
-
-function isMutationAlreadyApplied(mutation, sourceItems) {
-  if (!mutation || !mutation.action) return false;
-
-  switch (mutation.action) {
-    case "updateSpares":
-      return Array.isArray(mutation.changes) && mutation.changes.every(change => {
-        const item = findItemInList(sourceItems, change.i);
-        return item && item.hasSpare === (change.s === true);
-      });
-    case "updateSpare": {
-      const item = findItemInList(sourceItems, mutation.id);
-      return item && item.hasSpare === (mutation.hasSpare === true);
-    }
-    case "completePurchase":
-      return Array.isArray(mutation.ids) && mutation.ids.every(id => {
-        const item = findItemInList(sourceItems, id);
-        return item && item.hasSpare === true;
-      });
-    case "addItem": {
-      const item = findItemInList(sourceItems, mutation.item && mutation.item.id);
-      return isSameItemForSave(item, normalizeSingleItemForCompare(mutation.item || {}));
-    }
-    case "updateItem": {
-      const item = findItemInList(sourceItems, mutation.item && mutation.item.id);
-      return isSameItemForSave(item, normalizeSingleItemForCompare(mutation.item || {}));
-    }
-    case "deleteItem":
-      return !findItemInList(sourceItems, mutation.id);
-    case "updateOrder":
-      return Array.isArray(mutation.orders) && mutation.orders.every(order => {
-        const item = findItemInList(sourceItems, order.i);
-        return item && Number(item.categoryOrder) === Number(order.o);
-      });
-    default:
-      return false;
-  }
-}
-
-function arePendingRequestsAlreadyApplied(requests, sourceItems) {
-  return Array.isArray(requests) && requests.length > 0 && requests.every(request => {
-    return isMutationAlreadyApplied(request.mutation, sourceItems);
-  });
-}
-
-function clonePendingRequests(requests) {
-  return (requests || []).filter(Boolean).map(request => cloneSaveRequest(request));
-}
-
-function shouldCheckLatestBeforeRetry(errorCode) {
-  return errorCode === "N01" || errorCode === "N02";
-}
-
-async function retryPendingRequestsAfterLatestCheck(requests, retryAction) {
-  const retryRequests = clonePendingRequests(requests);
-  if (retryRequests.length === 0) return;
-
-  hideToast();
-  resetPullRefreshVisual();
-  setConflictModalLoading(true);
-  document.getElementById("conflictModal").classList.add("show");
-
-  try {
-    const response = await requestJsonp({});
-    const latestItems = getItemsFromLoadResponse(response);
-
-    if (arePendingRequestsAlreadyApplied(retryRequests, latestItems)) {
-      applyLoadedItemsResponse(response);
-      closeConflictModal();
-      showToast("保存状態を確認しました");
-      return;
-    }
-
-    applyServerVersionFromLoadResponse(response);
-    closeConflictModal();
-
-    if (typeof retryAction === "function") {
-      retryAction();
-    } else {
-      runImmediateSaveRequests(retryRequests);
-    }
-  } catch (error) {
-    console.error(error);
-    closeConflictModal();
-    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
-  }
-}
-
 function loadItems(options = {}) {
   const fromPull = options.fromPull === true;
   const afterLoadMessage = options.afterLoadMessage || "";
@@ -965,9 +841,42 @@ function loadItems(options = {}) {
   document.body.appendChild(script);
 }
 
-async function loadLatestItemsForConflictCancel() {
+async function reloadLatestItemsFromServer() {
   const response = await requestJsonp({});
   applyLoadedItemsResponse(response);
+}
+
+function clearPendingSaveState() {
+  pendingUpdateAction = null;
+  pendingUpdateErrorCode = "";
+  pendingConflictAction = null;
+  pendingSpareChanges.clear();
+  if (spareSaveTimer) {
+    clearTimeout(spareSaveTimer);
+    spareSaveTimer = null;
+  }
+  immediateSaveQueue = [];
+  immediateSaveQueued = false;
+}
+
+async function discardPendingChangesAndReloadLatest(message) {
+  clearPendingSaveState();
+  resetModesAndSelections();
+  hideToast();
+  resetPullRefreshVisual();
+  openBlockingLoadingModal("最新読み込み", "最新リストを読み込んでいます。");
+
+  try {
+    await reloadLatestItemsFromServer();
+    closeBlockingLoadingModal();
+    if (message) {
+      showToast(message);
+    }
+  } catch (error) {
+    console.error(error);
+    closeBlockingLoadingModal();
+    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
+  }
 }
 
 function requestJsonp(params) {
@@ -1028,20 +937,11 @@ function requestJsonp(params) {
   });
 }
 
-function getSavePayloadText(force) {
-  return "";
-}
-
-function isLargeSavePayload() {
-  return false;
-}
-
-function createSavePayload(action, data = {}, force = false, requestMeta = {}) {
+function createSavePayload(action, data = {}, requestMeta = {}) {
   return {
     ...data,
     action: action,
     baseVersion: serverVersion || 0,
-    force: force === true,
     clientId: requestMeta.clientId || getClientId(),
     requestId: requestMeta.requestId || createRequestId()
   };
@@ -1082,7 +982,6 @@ function buildSaveMutation(action, data = {}) {
 }
 
 async function saveItemsToServer(options = {}) {
-  const force = options.force === true;
   const mutation = options.mutation || null;
   const action = mutation && mutation.action ? mutation.action : "";
   if (!mutation || !action) {
@@ -1092,15 +991,12 @@ async function saveItemsToServer(options = {}) {
     clientId: options.clientId || getClientId(),
     requestId: options.requestId || createRequestId()
   };
-  const payload = createSavePayload(action, mutation, force, requestMeta);
+  const payload = createSavePayload(action, mutation, requestMeta);
 
   const payloadText = JSON.stringify(payload);
-  lastSavePayloadLength = payloadText.length;
-
   return requestJsonp({
     action: action,
     baseVersion: String(serverVersion || 0),
-    force: force ? "true" : "false",
     clientId: requestMeta.clientId,
     requestId: requestMeta.requestId,
     payload: payloadText
@@ -1111,7 +1007,6 @@ function saveRequestToServer(request) {
   const safeRequest = ensureSaveRequest(request);
   return saveItemsToServer({
     mutation: safeRequest.mutation,
-    force: safeRequest.force,
     clientId: safeRequest.clientId,
     requestId: safeRequest.requestId
   });
@@ -1204,11 +1099,11 @@ function scheduleSpareSave(id, hasSpare) {
   updateSaveStatusIndicator();
 }
 
-function createSpareChangesRequest(changes, force = false) {
+function createSpareChangesRequest(changes) {
   const mutation = buildSaveMutation("updateSpares", {
     changes: changes
   });
-  return createSaveRequest(mutation, force);
+  return createSaveRequest(mutation);
 }
 
 function saveSpareChangesRequest(request) {
@@ -1225,7 +1120,7 @@ function createDeferredPromise() {
   return { promise, resolve, reject };
 }
 
-async function flushSpareChanges(force = false) {
+async function flushSpareChanges() {
   if (isSpareBatchSaveRunning) {
     if (spareBatchSavePromise) {
       await spareBatchSavePromise;
@@ -1236,7 +1131,7 @@ async function flushSpareChanges(force = false) {
   // 追加・編集・削除・並び替えなどの保存が先に走っている場合は、
   // 在庫トグルの一括保存を送信せず、先行保存の完了後にまとめて送る。
   // 送信直前の最新 serverVersion を使うため。
-  if (!force && hasImmediateSaveWork()) {
+  if (hasImmediateSaveWork()) {
     deferSpareFlushUntilImmediateSaveDone();
     return true;
   }
@@ -1254,7 +1149,7 @@ async function flushSpareChanges(force = false) {
   }
 
   const changes = buildSpareChangesPayload(pendingSpareChanges);
-  const request = createSpareChangesRequest(changes, force);
+  const request = createSpareChangesRequest(changes);
   pendingSpareChanges.clear();
   isSpareBatchSaveRunning = true;
   const spareBatchDeferred = createDeferredPromise();
@@ -1337,42 +1232,21 @@ function getMutationActionName(mutation) {
   return mutation && mutation.action ? String(mutation.action) : "unknown";
 }
 
-function createPendingUpdateAction(mutation, force) {
-  const request = createSaveRequest(mutation || null, force);
+function createPendingUpdateAction(mutation) {
+  const request = createSaveRequest(mutation || null);
   const action = () => runImmediateSaveRequests([request]);
   action._actionName = getMutationActionName(mutation);
   action._pendingRequests = [cloneSaveRequest(request)];
   return action;
 }
 
-function createPendingImmediateRequestsAction(requests, forceOverride = null) {
-  const retryRequests = requests
-    .filter(request => request)
-    .map(request => {
-      const safeRequest = cloneSaveRequest(request);
-      safeRequest.force = forceOverride === null ? safeRequest.force === true : forceOverride === true;
-      return safeRequest;
-    });
-
+function createPendingImmediateRequestsAction(requests) {
+  const retryRequests = clonePendingRequests(requests);
   const action = () => runImmediateSaveRequests(retryRequests);
   const firstMutation = retryRequests.length > 0 ? retryRequests[0].mutation : null;
   action._actionName = getMutationActionName(firstMutation);
   action._pendingRequests = clonePendingRequests(retryRequests);
   return action;
-}
-
-function normalizeSaveImmediateArgs(mutationOrForce, maybeForce) {
-  if (typeof mutationOrForce === "boolean") {
-    return {
-      mutation: null,
-      force: mutationOrForce === true
-    };
-  }
-
-  return {
-    mutation: mutationOrForce || null,
-    force: maybeForce === true
-  };
 }
 
 async function runImmediateSaveRequests(requests) {
@@ -1445,14 +1319,13 @@ async function runImmediateSaveRequests(requests) {
   }
 }
 
-async function saveImmediateChange(mutationOrForce = null, maybeForce = false) {
-  const args = normalizeSaveImmediateArgs(mutationOrForce, maybeForce);
-  const firstRequest = createSaveRequest(args.mutation, args.force);
+async function saveImmediateChange(mutation = null) {
+  const firstRequest = createSaveRequest(mutation);
 
   return runImmediateSaveRequests([firstRequest]);
 }
 
-async function commitModeAndExit(successMessage, force = false, existingRequest = null) {
+async function commitModeAndExit(successMessage, existingRequest = null) {
   if (!hasModeChanges()) return;
   if (isModeSaving) return;
 
@@ -1463,7 +1336,7 @@ async function commitModeAndExit(successMessage, force = false, existingRequest 
 
   const request = existingRequest
     ? cloneSaveRequest(existingRequest)
-    : createSaveRequest(buildSaveMutation("completePurchase", { ids: purchaseIds }), force);
+    : createSaveRequest(buildSaveMutation("completePurchase", { ids: purchaseIds }));
 
   setModeSaving(true);
 
@@ -1495,7 +1368,7 @@ async function commitModeAndExit(successMessage, force = false, existingRequest 
   } catch (error) {
     console.error(error);
     setModeSaving(false);
-    pendingUpdateAction = () => commitModeAndExit(successMessage, force, request);
+    pendingUpdateAction = () => commitModeAndExit(successMessage, request);
     pendingUpdateAction._actionName = "completePurchase";
     pendingUpdateAction._pendingRequests = [cloneSaveRequest(request)];
     openUpdateRetryModal(error && error.code ? error.code : "N01");
@@ -3305,13 +3178,7 @@ function confirmHomeCancel() {
 }
 
 function getUpdateRetryMessage() {
-  let message = "保存結果を確認できませんでした。\n通信状況を確認して、再更新してください。";
-
-  if (isLargeSavePayload()) {
-    message += "\nデータ量が多くなっている可能性があります。";
-  }
-
-  return message;
+  return "保存結果を確認できませんでした。\n通信状況を確認して、再更新してください。";
 }
 
 function openUpdateRetryModal(errorCode, options = {}) {
@@ -3366,23 +3233,7 @@ async function retryPendingUpdate() {
 
 async function cancelPendingUpdate() {
   closeUpdateRetryModal();
-  pendingUpdateAction = null;
-  pendingUpdateErrorCode = "";
-  resetModesAndSelections();
-  hideToast();
-  resetPullRefreshVisual();
-  setConflictModalLoading(true);
-  document.getElementById("conflictModal").classList.add("show");
-
-  try {
-    await loadLatestItemsForConflictCancel();
-    closeConflictModal();
-    showToast("最新状態に戻しました");
-  } catch (error) {
-    console.error(error);
-    closeConflictModal();
-    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
-  }
+  await discardPendingChangesAndReloadLatest("最新状態に戻しました");
 }
 
 function openBlockingLoadingModal(titleText, messageText) {
@@ -3456,23 +3307,8 @@ function closeConflictModal() {
 }
 
 async function loadLatestFromConflict() {
-  pendingConflictAction = null;
-  resetModesAndSelections();
-  setConflictModalLoading(true);
-
-  try {
-    await loadLatestItemsForConflictCancel();
-    closeConflictModal();
-    showToast("最新リストを読み込みました");
-  } catch (error) {
-    console.error(error);
-    closeConflictModal();
-    openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
-  }
-}
-
-function forcePendingConflictSave() {
-  loadLatestFromConflict();
+  closeConflictModal();
+  await discardPendingChangesAndReloadLatest("最新リストを読み込みました");
 }
 
 function openLoadFailureModal(message) {
@@ -3554,8 +3390,7 @@ function getPendingBackgroundRequestsForCheck() {
   if (pendingSpareChanges.size > 0) {
     const changes = buildSpareChangesPayload(pendingSpareChanges);
     return [{
-      mutation: buildSaveMutation("updateSpares", { changes: changes }),
-      force: false
+      mutation: buildSaveMutation("updateSpares", { changes: changes })
     }];
   }
 
