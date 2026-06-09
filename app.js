@@ -1,7 +1,7 @@
 // ========================================
 // 基本設定
 // ========================================
-const APP_VERSION = "3.0.2";
+const APP_VERSION = "3.0.3";
 const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzVXg3onyOQzhidikArLr1gRc0L1Px3oNK5fQs6VqNA3XoxLJ_y4I35GEmofCB2g7Cn7g/exec";
 
 const SAVE_PAYLOAD_WARNING_LENGTH = 6000;
@@ -179,6 +179,10 @@ let suppressNativeClickUntil = 0;
 let wentBackgroundWhileSaving = false;
 let backgroundReturnCheckTimer = null;
 let isBackgroundSaveRecoveryRunning = false;
+
+function wait(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 
 // ========================================
@@ -3310,10 +3314,10 @@ function getUpdateRetryMessage() {
   return message;
 }
 
-function openUpdateRetryModal(errorCode) {
+function openUpdateRetryModal(errorCode, options = {}) {
   pendingUpdateErrorCode = errorCode ? String(errorCode) : "";
 
-  if (document.hidden && wentBackgroundWhileSaving) {
+  if (!options.forceShow && ((document.hidden && wentBackgroundWhileSaving) || isBackgroundSaveRecoveryRunning)) {
     return;
   }
 
@@ -3592,12 +3596,8 @@ function isModalVisible(id) {
 async function handleBackgroundReturnAfterSave() {
   if (!wentBackgroundWhileSaving || isBackgroundSaveRecoveryRunning) return;
 
-  if (isAnySaveRunningNow()) {
-    scheduleBackgroundReturnCheck(800);
-    return;
-  }
-
-  if (!hasPendingSaveWork() && typeof pendingUpdateAction !== "function") {
+  const hasWorkOnReturn = isAnySaveRunningNow() || hasPendingSaveWork() || typeof pendingUpdateAction === "function";
+  if (!hasWorkOnReturn) {
     wentBackgroundWhileSaving = false;
     return;
   }
@@ -3607,7 +3607,19 @@ async function handleBackgroundReturnAfterSave() {
   openBlockingLoadingModal("保存確認中", "保存中の変更を確認しています。");
 
   try {
-    await retryPendingWorkAfterBackground();
+    // 復帰時点で通信中の保存がある場合は、先に画面をロックして完了を待つ。
+    // 完了後に未送信キューや更新失敗が残っていれば、同じ requestId のまま再処理する。
+    while (isAnySaveRunningNow()) {
+      await wait(250);
+    }
+
+    if (hasPendingSaveWork() || typeof pendingUpdateAction === "function") {
+      await retryPendingWorkAfterBackground();
+
+      while (isAnySaveRunningNow()) {
+        await wait(250);
+      }
+    }
 
     if (isModalVisible("conflictModal") && !isConflictReloading) {
       await loadLatestFromConflict();
@@ -3621,11 +3633,13 @@ async function handleBackgroundReturnAfterSave() {
     console.error(error);
     closeBlockingLoadingModal();
 
+    isBackgroundSaveRecoveryRunning = false;
     if (typeof pendingUpdateAction === "function") {
-      openUpdateRetryModal(error && error.code ? error.code : "N01");
+      openUpdateRetryModal(error && error.code ? error.code : "N01", { forceShow: true });
     } else {
       openLoadFailureModal("リストを読み込めませんでした。\n通信状況を確認してください。");
     }
+    return;
   } finally {
     isBackgroundSaveRecoveryRunning = false;
   }
